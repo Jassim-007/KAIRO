@@ -1,8 +1,146 @@
+
 import { FieldValue } from "firebase-admin/firestore";
 import { NextResponse } from "next/server";
 import { adminDb } from "@/lib/server/firebase-admin";
-import { enforceRateLimit, requireUser, workspaceErrorResponse, WorkspaceError } from "@/lib/server/workspace-security";
-export const runtime="nodejs";
-const allowedGender=["female","male","nonbinary","prefer_not_to_say"] as const;
-export async function GET(request:Request){try{const user=await requireUser(request);const snap=await adminDb.collection("users").doc(user.uid).get();const profile=snap.data()||{};return NextResponse.json({gender:profile.gender??"",photoURL:profile.photoURL??""});}catch(error){return workspaceErrorResponse(error);}}
-export async function PUT(request:Request){try{const user=await requireUser(request);await enforceRateLimit(user.uid,"account_profile_update",20,3600000);const body=await request.json().catch(()=>null);if(!body||typeof body!=="object"||Array.isArray(body))throw new WorkspaceError("Provide a valid profile.",400);const name=typeof body.displayName==="string"?body.displayName.trim():"";const photoURL=typeof body.photoURL==="string"?body.photoURL.trim():"";const gender=body.gender===""||body.gender===null?null:body.gender;if(name.length<2||name.length>80)throw new WorkspaceError("Name must contain 2–80 characters.",400);if(photoURL.length>500||photoURL&&!/^https:\/\//i.test(photoURL))throw new WorkspaceError("Profile photo must be a secure HTTPS URL.",400);if(gender!==null&&!allowedGender.includes(gender))throw new WorkspaceError("Choose a valid gender option.",400);const memberRef=adminDb.collection("workspaceMembers").doc(user.uid);const member=await memberRef.get();const writes=[adminDb.collection("users").doc(user.uid).set({displayName:name,photoURL,gender,updatedAt:FieldValue.serverTimestamp()},{merge:true})];if(member.exists)writes.push(memberRef.set({displayName:name,photoURL,gender,email:user.email},{merge:true}));await Promise.all(writes);return NextResponse.json({success:true});}catch(error){return workspaceErrorResponse(error);}}
+import {
+  enforceRateLimit,
+  ensureAccountActive,
+  requireUser,
+  workspaceErrorResponse,
+  WorkspaceError,
+} from "@/lib/server/workspace-security";
+
+export const runtime = "nodejs";
+
+const allowedGender = [
+  "female",
+  "male",
+  "nonbinary",
+  "prefer_not_to_say",
+] as const;
+
+export async function GET(request: Request) {
+  try {
+    const user = await requireUser(request);
+
+    await ensureAccountActive(user.uid);
+
+    const snap = await adminDb
+      .collection("users")
+      .doc(user.uid)
+      .get();
+
+    const profile = snap.data() || {};
+
+    return NextResponse.json({
+      gender: profile.gender ?? "",
+      photoURL: profile.photoURL ?? "",
+    });
+  } catch (error) {
+    return workspaceErrorResponse(error);
+  }
+}
+
+export async function PUT(request: Request) {
+  try {
+    const user = await requireUser(request);
+
+    await ensureAccountActive(user.uid);
+
+    await enforceRateLimit(
+      user.uid,
+      "account_profile_update",
+      20,
+      3600000,
+    );
+
+    const body = await request.json().catch(() => null);
+
+    if (!body || typeof body !== "object" || Array.isArray(body)) {
+      throw new WorkspaceError("Provide a valid profile.", 400);
+    }
+
+    const name =
+      typeof body.displayName === "string"
+        ? body.displayName.trim()
+        : "";
+
+    const photoURL =
+      typeof body.photoURL === "string"
+        ? body.photoURL.trim()
+        : "";
+
+    const gender =
+      body.gender === "" || body.gender === null
+        ? null
+        : body.gender;
+
+    if (name.length < 2 || name.length > 80) {
+      throw new WorkspaceError(
+        "Name must contain 2–80 characters.",
+        400,
+      );
+    }
+
+    if (
+      photoURL.length > 500 ||
+      (photoURL && !/^https:\/\//i.test(photoURL))
+    ) {
+      throw new WorkspaceError(
+        "Profile photo must be a secure HTTPS URL.",
+        400,
+      );
+    }
+
+    if (
+      gender !== null &&
+      !allowedGender.includes(gender as (typeof allowedGender)[number])
+    ) {
+      throw new WorkspaceError(
+        "Choose a valid gender option.",
+        400,
+      );
+    }
+
+    const memberRef = adminDb
+      .collection("workspaceMembers")
+      .doc(user.uid);
+
+    const member = await memberRef.get();
+
+    const writes: Promise<unknown>[] = [
+      adminDb
+        .collection("users")
+        .doc(user.uid)
+        .set(
+          {
+            displayName: name,
+            photoURL,
+            gender,
+            updatedAt: FieldValue.serverTimestamp(),
+          },
+          { merge: true },
+        ),
+    ];
+
+    if (member.exists) {
+      writes.push(
+        memberRef.set(
+          {
+            displayName: name,
+            photoURL,
+            gender,
+            email: user.email,
+          },
+          { merge: true },
+        ),
+      );
+    }
+
+    await Promise.all(writes);
+
+    return NextResponse.json({ success: true });
+  } catch (error) {
+    return workspaceErrorResponse(error);
+  }
+}

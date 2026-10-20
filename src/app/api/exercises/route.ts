@@ -2,7 +2,7 @@ import { FieldValue } from "firebase-admin/firestore";
 import { NextResponse } from "next/server";
 import { adminDb } from "@/lib/server/firebase-admin";
 import { enforceRateLimit, requireUser, workspaceErrorResponse, WorkspaceError } from "@/lib/server/workspace-security";
-import { getUserWorkspace } from "@/lib/server/nutrition";
+import { getUserFitnessRoot } from "@/lib/server/nutrition";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -37,8 +37,8 @@ function exerciseId(name: string) {
 }
 async function exerciseCollection(request: Request) {
   const user = await requireUser(request);
-  const workspaceId = await getUserWorkspace(user.uid);
-  return { user, collection: adminDb.collection("workspaces").doc(workspaceId).collection("exerciseLibraries").doc(user.uid).collection("exercises") };
+  const { root } = await getUserFitnessRoot(user.uid);
+  return { user, collection: root.collection("exerciseLibraries").doc(user.uid).collection("exercises") };
 }
 
 export async function GET(request: Request) {

@@ -43,7 +43,7 @@ export default function TomorrowPage() {
   if (!user) return <main className="min-h-screen" />;
   return (
     <main className="min-h-screen text-ink">
-      <header className="px-4 pb-3 pt-[max(1rem,env(safe-area-inset-top))] sm:px-8"><p className="text-xs text-ink-mute">FORM/AI · your fitness space</p></header>
+      <header className="px-4 pb-3 pt-[max(1rem,env(safe-area-inset-top))] sm:px-8"><p className="text-xs text-ink-mute">KAIRO · YOUR MOMENT . YOUR MOMENTUM</p></header>
       
       <div className="mx-auto max-w-4xl space-y-6 px-4 py-7 sm:px-8 sm:py-9">
         <section>

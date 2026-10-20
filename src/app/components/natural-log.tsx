@@ -362,7 +362,7 @@ export default function NaturalLog({
         >
           <span>
             <span className="block text-xs font-semibold uppercase tracking-wider text-periwinkle">
-              FORM/AI chat
+              KAIRO chat
             </span>
             <span className="mt-1 block text-sm text-ink">
               Talk with your fitness buddy
@@ -383,7 +383,7 @@ export default function NaturalLog({
           <div className="flex items-start justify-between gap-3">
             <div>
               <p className="text-xs font-semibold uppercase tracking-wider text-periwinkle">
-                FORM/AI chat
+                KAIRO chat
               </p>
               <h2 className="mt-1 font-semibold text-ink">
                 Your fitness buddy
@@ -417,7 +417,7 @@ export default function NaturalLog({
                 }`}
               >
                 <span className="mb-1 block text-[10px] font-semibold uppercase tracking-wide text-periwinkle">
-                  {entry.role === "user" ? "You" : "Your buddy"}
+                  {entry.role === "user" ? "You" : "KAIRO BOT"}
                 </span>
                 <p className="whitespace-pre-wrap">{entry.content}</p>
 
@@ -474,7 +474,7 @@ export default function NaturalLog({
 
             {busy && (
               <p className="mr-6 rounded-xl border border-line bg-sunken px-3 py-2 text-xs text-ink-mute">
-                Your buddy is typing…
+                KAIRO BOT is typing…
               </p>
             )}
             <div ref={bottomRef} />

@@ -214,6 +214,30 @@ export default function WorkspacePage() {
     }
   }
 
+  async function manageWorkspace(action: "leave" | "delete") {
+    const isOwner = members.some((member) => member.uid === user?.uid && member.role === "owner");
+    const prompt = action === "delete"
+      ? "Delete this shared workspace? All shared workspace data and invitations will be removed. Both accounts and their personal records will stay active."
+      : "Leave this workspace? Your membership and records you added to the shared space will be removed. Your personal data and your partner’s account and data will stay active.";
+    if ((action === "delete" && !isOwner) || !window.confirm(prompt)) return;
+    setLoading(true);
+    setError("");
+    setMessage("");
+    try {
+      await apiRequest("/api/workspace/lifecycle", { action });
+      setWorkspace(null);
+      setMembers([]);
+      setSharedDay({ nutrition: [], water: [], weight: [], workouts: [] });
+      setInviteCode("");
+      setInviteExpiresAt("");
+      setMessage(action === "delete" ? "Workspace deleted. Your account and personal records are unchanged." : "You left the workspace. Your personal records are unchanged.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not update the workspace.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
   async function copyInviteCode() {
     if (!inviteCode) return;
 
@@ -265,8 +289,8 @@ export default function WorkspacePage() {
         </h1>
 
         <p className="mt-3 max-w-2xl text-sm leading-6 text-ink-soft">
-          Create a shared fitness space for you and your training partner. Both
-          accounts can participate once they have joined the same workspace.
+          Personal tracking works without a workspace. Create or join one only if you
+          want to share activity with a training partner.
         </p>
 
         {error && (
@@ -411,13 +435,23 @@ export default function WorkspacePage() {
                 Refresh workspace
               </button>
 
-              {members.length < 2 && (
+              {members.length < 2 && members.some((member) => member.uid === user.uid && member.role === "owner") && (
                 <button
                   onClick={() => void generateInviteCode()}
                   disabled={loading || checking}
                   className="rounded-2xl bg-butter px-4 py-3 text-sm font-bold text-butter-ink transition hover:bg-butter-hover disabled:opacity-50"
                 >
                   {loading ? "Generating..." : "Generate invite code"}
+                </button>
+              )}
+              {members.some((member) => member.uid === user.uid && member.role === "member") && (
+                <button onClick={() => void manageWorkspace("leave")} disabled={loading || checking} className="rounded-2xl border border-line px-4 py-3 text-sm text-ink-soft transition hover:bg-sunken disabled:opacity-50">
+                  Leave workspace
+                </button>
+              )}
+              {members.some((member) => member.uid === user.uid && member.role === "owner") && (
+                <button onClick={() => void manageWorkspace("delete")} disabled={loading || checking} className="rounded-2xl border border-danger/30 px-4 py-3 text-sm font-semibold text-danger transition hover:bg-danger/10 disabled:opacity-50">
+                  Delete workspace
                 </button>
               )}
             </div>

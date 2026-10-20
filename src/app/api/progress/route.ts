@@ -1,8 +1,7 @@
 import { NextResponse } from "next/server";
 import type { QueryDocumentSnapshot } from "firebase-admin/firestore";
-import { adminDb } from "@/lib/server/firebase-admin";
 import { enforceRateLimit, requireUser, workspaceErrorResponse } from "@/lib/server/workspace-security";
-import { getUserWorkspace } from "@/lib/server/nutrition";
+import { getUserFitnessRoot } from "@/lib/server/nutrition";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -27,8 +26,7 @@ export async function GET(request: Request) {
   try {
     const user = await requireUser(request);
     await enforceRateLimit(user.uid, "progress_read", 60, 60 * 60 * 1000);
-    const workspaceId = await getUserWorkspace(user.uid);
-    const workspace = adminDb.collection("workspaces").doc(workspaceId);
+    const { root } = await getUserFitnessRoot(user.uid);
     const date = new URL(request.url).searchParams.get("date") ?? localDate();
     const parsedDate = /^\d{4}-\d{2}-\d{2}$/.test(date) ? new Date(`${date}T00:00:00.000Z`) : null;
     if (!parsedDate || Number.isNaN(parsedDate.getTime()) || parsedDate.toISOString().slice(0, 10) !== date) {
@@ -36,11 +34,11 @@ export async function GET(request: Request) {
     }
 
     const [nutritionSnap, waterSnap, workoutsSnap, weightsSnap, goalsSnap] = await Promise.all([
-      workspace.collection("nutrition").where("date", "==", date).get(),
-      workspace.collection("water").where("date", "==", date).get(),
-      workspace.collection("workouts").where("date", "==", date).get(),
-      workspace.collection("weight").where("date", "==", date).get(),
-      workspace.collection("fitnessGoals").doc(user.uid).get(),
+      root.collection("nutrition").where("date", "==", date).get(),
+      root.collection("water").where("date", "==", date).get(),
+      root.collection("workouts").where("date", "==", date).get(),
+      root.collection("weight").where("date", "==", date).get(),
+      root.collection("fitnessGoals").doc(user.uid).get(),
     ]);
 
     const ownNutritionDocs = nutritionSnap.docs.filter((doc) => doc.data().loggedBy === user.uid);

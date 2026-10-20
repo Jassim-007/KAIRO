@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024" role="img" aria-labelledby="title desc">
+  <title id="title">KAIRO K Symbol</title>
+  <desc id="desc">Standalone K lettermark with a warm gold upright stroke and leaf accent, and a lavender flowing lower-right stroke. Transparent background.</desc>
+  <defs>
+    <linearGradient id="gold" x1="0" y1="0" x2="0.8" y2="1">
+      <stop offset="0" stop-color="#FFE58A"/>
+      <stop offset="0.58" stop-color="#F7D77C"/>
+      <stop offset="1" stop-color="#C8B7C9"/>
+    </linearGradient>
+    <linearGradient id="lavender" x1="0" y1="0" x2="0.8" y2="1">
+      <stop offset="0" stop-color="#D5C9F5"/>
+      <stop offset="1" stop-color="#A99BE0"/>
+    </linearGradient>
+  </defs>
+  <g>
+    <path fill="url(#gold)" d="M 258,196 L 258,653 C 258,708 290,747 360,771 L 360,358 C 360,338 347,322 329,304 Z"/>
+    <path fill="url(#gold)" d="M 450,454 C 492,438 535,413 570,382 C 610,347 638,309 656,260 C 611,273 575,288 545,309 C 506,337 481,385 450,454 Z"/>
+    <path fill="url(#lavender)" d="M 378,559 C 383,509 414,475 455,475 C 495,475 521,502 545,536 C 585,594 624,658 698,706 L 645,706 C 600,706 572,684 547,651 C 523,619 506,585 478,565 C 448,544 413,544 378,559 Z"/>
+  </g>
+</svg>

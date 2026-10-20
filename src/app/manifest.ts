@@ -1,32 +1,42 @@
+
 import type { MetadataRoute } from "next";
 
 export default function manifest(): MetadataRoute.Manifest {
   return {
-    name: "FORM/AI Fitness Tracker",
-    short_name: "FORM/AI",
-    description: "Your personal fitness log and shared couple workouts.",
+    id: "/",
+    name: "KAIRO — Fitness & Wellness",
+    short_name: "KAIRO",
+    description:
+      "Your moment. Your momentum. Track workouts, nutrition, hydration, and progress.",
     start_url: "/dashboard",
+    scope: "/",
     display: "standalone",
-    background_color: "#faf7f0",
-    theme_color: "#faf7f0",
+    background_color: "#17182D",
+    theme_color: "#17182D",
     orientation: "portrait",
-    shortcuts: [
-      { name: "Log something", url: "/tracker" },
-      { name: "Start workout", url: "/workout" },
-    ],
     icons: [
       {
-        src: "/form-ai-icon.svg",
-        sizes: "any",
-        type: "image/svg+xml",
+        src: "/kairo-icon-192.png",
+        sizes: "192x192",
+        type: "image/png",
         purpose: "any",
       },
       {
-        src: "/form-ai-icon.svg",
-        sizes: "any",
-        type: "image/svg+xml",
+        src: "/kairo-icon-512.png",
+        sizes: "512x512",
+        type: "image/png",
+        purpose: "any",
+      },
+      {
+        src: "/kairo-maskable-512.png",
+        sizes: "512x512",
+        type: "image/png",
         purpose: "maskable",
       },
+    ],
+    shortcuts: [
+      { name: "Log something", url: "/tracker" },
+      { name: "Start workout", url: "/workout" },
     ],
   };
 }

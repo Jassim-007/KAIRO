@@ -59,6 +59,16 @@ export default function SignupPage() {
         {error && <Alert kind="error">{error}</Alert>}
         <button disabled={loading} className="w-full rounded-full bg-butter px-5 py-4 text-base font-bold text-butter-ink disabled:opacity-60">{loading ? "Creating account…" : "Create account"}</button>
       </form>
+            <p className="mt-5 text-center text-xs text-ink-soft">
+        By creating an account, you acknowledge our{" "}
+        <Link
+          href="/privacy"
+          className="font-semibold text-periwinkle underline decoration-periwinkle/30 underline-offset-4"
+        >
+          Privacy Notice
+        </Link>
+        .
+      </p>
     </AuthFrame>
   );
 }

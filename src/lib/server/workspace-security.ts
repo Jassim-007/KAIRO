@@ -4,6 +4,7 @@ import "server-only";
 import { NextResponse } from "next/server";
 import { Timestamp } from "firebase-admin/firestore";
 import { adminAuth, adminDb } from "@/lib/server/firebase-admin";
+import { isDeletionInProgress } from "@/lib/server/account-deletion-policy";
 
 export class WorkspaceError extends Error {
   constructor(
@@ -33,6 +34,17 @@ export async function requireUser(request: Request) {
     if (decoded.firebase?.sign_in_provider === "password" && decoded.email_verified !== true) {
       throw new WorkspaceError("Verify your email before using your account.", 403);
     }
+    const deletionJob = await adminDb
+  .collection("accountDeletionJobs")
+  .doc(decoded.uid)
+  .get();
+
+if (isDeletionInProgress(deletionJob.data(), decoded.uid)) {
+  throw new WorkspaceError(
+    "Your account deletion is in progress.",
+    410,
+  );
+}
     return {
       uid: decoded.uid,
       email: decoded.email ?? null,
@@ -43,6 +55,30 @@ export async function requireUser(request: Request) {
     throw new WorkspaceError("Your session is invalid. Please sign in again.", 401);
   }
 }
+
+/**
+ * Reject requests from accounts whose deletion has started.
+ */
+export async function ensureAccountActive(uid: string) {
+  const memberRef = adminDb.collection("workspaceMembers").doc(uid);
+  const userRef = adminDb.collection("users").doc(uid);
+
+  const [memberSnapshot, userSnapshot] = await Promise.all([
+    memberRef.get(),
+    userRef.get(),
+  ]);
+
+  if (
+    memberSnapshot.data()?.status === "deleting" ||
+    userSnapshot.data()?.accountStatus === "deleting"
+  ) {
+    throw new WorkspaceError(
+      "Your account is being deleted. Please try again later.",
+      410,
+    );
+  }
+}
+
 
 /**
  * A persistent per-user rate limit stored in Firestore.

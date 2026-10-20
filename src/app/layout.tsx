@@ -8,9 +8,19 @@ const display = Bricolage_Grotesque({ variable: "--f-display", subsets: ["latin"
 const hand = Caveat({ variable: "--f-hand", subsets: ["latin"], display: "swap" });
 
 export const metadata: Metadata = {
-  title: "FORM/AI · Fitness tracker",
-  description: "Track meals, hydration, weight, and workouts with an AI-first fitness log.",
-  appleWebApp: { capable: true, title: "FORM/AI", statusBarStyle: "default" },
+  title: "KAIRO — Fitness & Wellness",
+  description:
+    "Your moment. Your momentum. Track workouts, nutrition, hydration, and progress.",
+  applicationName: "KAIRO",
+  icons: {
+    icon: "/favicon.ico",
+    apple: "/kairo-icon-192.png",
+  },
+  appleWebApp: {
+    capable: true,
+    title: "KAIRO",
+    statusBarStyle: "black-translucent",
+  },
 };
 
 export const viewport: Viewport = {

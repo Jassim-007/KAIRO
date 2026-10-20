@@ -33,7 +33,7 @@ export function Icon({ name, size = 22, strokeWidth = 1.8, ...rest }: { name: Ic
   );
 }
 
-/* FORM/AI mark: a butter sun with a sprout, the app's growth motif. */
+/* KAIRO mark: a butter sun with a sprout, the app's growth motif. */
 export function BrandMark({ size = 36 }: { size?: number }) {
   return (
     <svg width={size} height={size} viewBox="0 0 40 40" aria-hidden="true" focusable="false">
