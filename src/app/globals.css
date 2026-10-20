@@ -1,5 +1,45 @@
 @import "tailwindcss";
 
+/* Consistent, accessible controls across every FORM/AI page. */
+@layer base {
+  input:not([type="checkbox"]):not([type="radio"]):not([type="range"]),
+  select,
+  textarea {
+    color-scheme: dark;
+    border: 1px solid rgb(255 255 255 / 12%);
+    border-radius: 0.75rem;
+    background-color: #11130f;
+    color: #f4f4f0;
+    transition: border-color 150ms ease, box-shadow 150ms ease, background-color 150ms ease;
+  }
+
+  input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):hover,
+  select:hover,
+  textarea:hover {
+    border-color: rgb(255 255 255 / 22%);
+  }
+
+  input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):focus-visible,
+  select:focus-visible,
+  textarea:focus-visible {
+    border-color: #bef264;
+    outline: none;
+    box-shadow: 0 0 0 3px rgb(190 242 100 / 16%);
+  }
+
+  input::placeholder,
+  textarea::placeholder {
+    color: #777b70;
+  }
+
+  input:disabled,
+  select:disabled,
+  textarea:disabled {
+    cursor: not-allowed;
+    opacity: 0.55;
+  }
+}
+
 :root {
   --background: #ffffff;
   --foreground: #171717;

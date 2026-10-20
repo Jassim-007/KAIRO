@@ -1,0 +1,11 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Browser access is intentionally disabled. Authenticated Next.js API
+    // routes use the Admin SDK and enforce each user's ownership rules.
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

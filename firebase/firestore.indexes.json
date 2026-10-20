@@ -1,0 +1,61 @@
+{
+  "indexes": [
+    {
+      "collectionGroup": "weight",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "subjectUid",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "date",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "fields": [
+        {
+          "order": "ASCENDING",
+          "fieldPath": "loggedBy"
+        },
+        {
+          "order": "DESCENDING",
+          "fieldPath": "date"
+        }
+      ],
+      "queryScope": "COLLECTION",
+      "collectionGroup": "nutrition"
+    },
+    {
+      "fields": [
+        {
+          "order": "ASCENDING",
+          "fieldPath": "loggedBy"
+        },
+        {
+          "order": "DESCENDING",
+          "fieldPath": "date"
+        }
+      ],
+      "queryScope": "COLLECTION",
+      "collectionGroup": "water"
+    },
+    {
+      "fields": [
+        {
+          "order": "ASCENDING",
+          "fieldPath": "subjectUid"
+        },
+        {
+          "order": "DESCENDING",
+          "fieldPath": "date"
+        }
+      ],
+      "queryScope": "COLLECTION",
+      "collectionGroup": "workouts"
+    }
+  ],
+  "fieldOverrides": []
+}
