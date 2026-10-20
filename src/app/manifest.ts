@@ -7,14 +7,25 @@ export default function manifest(): MetadataRoute.Manifest {
     description: "Your personal fitness log and shared couple workouts.",
     start_url: "/dashboard",
     display: "standalone",
-    background_color: "#10110f",
-    theme_color: "#bef264",
+    background_color: "#faf7f0",
+    theme_color: "#faf7f0",
+    orientation: "portrait",
+    shortcuts: [
+      { name: "Log something", url: "/tracker" },
+      { name: "Start workout", url: "/workout" },
+    ],
     icons: [
       {
         src: "/form-ai-icon.svg",
         sizes: "any",
         type: "image/svg+xml",
         purpose: "any",
+      },
+      {
+        src: "/form-ai-icon.svg",
+        sizes: "any",
+        type: "image/svg+xml",
+        purpose: "maskable",
       },
     ],
   };
