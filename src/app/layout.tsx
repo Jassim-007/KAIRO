@@ -7,14 +7,35 @@ const body = Figtree({ variable: "--f-body", subsets: ["latin"], display: "swap"
 const display = Bricolage_Grotesque({ variable: "--f-display", subsets: ["latin"], display: "swap" });
 const hand = Caveat({ variable: "--f-hand", subsets: ["latin"], display: "swap" });
 
+
 export const metadata: Metadata = {
-  title: "KAIRO — Fitness & Wellness",
+  title: {
+    default: "KAIRO — Fitness & Wellness",
+    template: "%s | KAIRO",
+  },
   description:
     "Your moment. Your momentum. Track workouts, nutrition, hydration, and progress.",
   applicationName: "KAIRO",
   icons: {
-    icon: "/favicon.ico",
-    apple: "/kairo-icon-192.png",
+    icon: [
+      { url: "/favicon.ico", sizes: "any" },
+      {
+        url: "/kairo-k-symbol.svg",
+        type: "image/svg+xml",
+      },
+      {
+        url: "/kairo-icon-192.png",
+        type: "image/png",
+        sizes: "192x192",
+      },
+    ],
+    apple: [
+      {
+        url: "/kairo-icon-192.png",
+        sizes: "192x192",
+        type: "image/png",
+      },
+    ],
   },
   appleWebApp: {
     capable: true,
@@ -22,6 +43,7 @@ export const metadata: Metadata = {
     statusBarStyle: "black-translucent",
   },
 };
+
 
 export const viewport: Viewport = {
   width: "device-width",
