@@ -1,12 +1,27 @@
+
 import type { Metadata, Viewport } from "next";
 import { Bricolage_Grotesque, Caveat, Figtree } from "next/font/google";
+import { Analytics } from "@vercel/analytics/next";
 import "./globals.css";
 import AppShell from "@/app/components/app-shell";
 
-const body = Figtree({ variable: "--f-body", subsets: ["latin"], display: "swap" });
-const display = Bricolage_Grotesque({ variable: "--f-display", subsets: ["latin"], display: "swap" });
-const hand = Caveat({ variable: "--f-hand", subsets: ["latin"], display: "swap" });
+const body = Figtree({
+  variable: "--f-body",
+  subsets: ["latin"],
+  display: "swap",
+});
 
+const display = Bricolage_Grotesque({
+  variable: "--f-display",
+  subsets: ["latin"],
+  display: "swap",
+});
+
+const hand = Caveat({
+  variable: "--f-hand",
+  subsets: ["latin"],
+  display: "swap",
+});
 
 export const metadata: Metadata = {
   title: {
@@ -44,7 +59,6 @@ export const metadata: Metadata = {
   },
 };
 
-
 export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
@@ -57,9 +71,13 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
-    <html lang="en" className={`${body.variable} ${display.variable} ${hand.variable} h-full antialiased`}>
+    <html
+      lang="en"
+      className={`${body.variable} ${display.variable} ${hand.variable} h-full antialiased`}
+    >
       <body className="min-h-full font-sans">
         <AppShell>{children}</AppShell>
+        <Analytics />
       </body>
     </html>
   );
