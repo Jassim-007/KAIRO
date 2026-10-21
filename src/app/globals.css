@@ -420,6 +420,7 @@ main {
 }
 .ring-draw {
   animation: draw-ring 1.1s var(--ease) both;
+  transition: stroke-dashoffset 500ms var(--ease);
 }
 
 /* Inputs: keep 16px on touch so mobile browsers never zoom into a field. */

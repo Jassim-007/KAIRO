@@ -115,14 +115,24 @@ export default function DashboardPage() {
     setLoading(true);
 
     try {
-      const [progress, weightLog, workoutLog, planData] = await Promise.all([
-        tokenRequest(`/api/progress?date=${encodeURIComponent(selectedDate)}`),
+      // Render the daily balance as soon as its request completes instead of
+      // waiting for unrelated history and plan requests too.
+      const progressRequest = tokenRequest(
+        `/api/progress?date=${encodeURIComponent(selectedDate)}`,
+      );
+      const supportingDataRequest = Promise.all([
         tokenRequest("/api/fitness/weight"),
         tokenRequest("/api/fitness/workouts"),
         tokenRequest("/api/fitness/plans"),
       ]);
+      void supportingDataRequest.catch(() => undefined);
+
+      const progress = await progressRequest;
 
       setSummary(progress);
+      setLoading(false);
+
+      const [weightLog, workoutLog, planData] = await supportingDataRequest;
       setWeights(
         (weightLog.records || [])
           .slice()
@@ -310,13 +320,20 @@ export default function DashboardPage() {
       : null;
 
   const ring = ringGoal
-    ? {
-        name: ringGoal.name,
-        unit: ringGoal.unit,
-        value: Math.min(1, ringGoal.value / ringGoal.goal),
-        pct: Math.round((ringGoal.value / ringGoal.goal) * 100),
-        left: ringGoal.goal - ringGoal.value,
-      }
+    ? (() => {
+        const goal = Number(ringGoal.goal);
+        const rawValue = Number(ringGoal.value);
+        const value = Number.isFinite(rawValue) ? Math.max(0, rawValue) : 0;
+        const ratio = Number.isFinite(goal) && goal > 0 ? value / goal : 0;
+
+        return {
+          name: ringGoal.name,
+          unit: ringGoal.unit,
+          value: Math.max(0, Math.min(1, ratio)),
+          pct: Math.round(ratio * 100),
+          left: goal - value,
+        };
+      })()
     : null;
 
   if (!user) {
