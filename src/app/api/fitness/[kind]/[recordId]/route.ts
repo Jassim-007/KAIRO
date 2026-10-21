@@ -1,8 +1,7 @@
 import { FieldValue } from "firebase-admin/firestore";
 import { NextResponse } from "next/server";
-import { adminDb } from "@/lib/server/firebase-admin";
 import { enforceRateLimit, requireUser, workspaceErrorResponse, WorkspaceError } from "@/lib/server/workspace-security";
-import { getUserWorkspace } from "@/lib/server/nutrition";
+import { getUserFitnessRoot } from "@/lib/server/nutrition";
 import { parseFitnessEntry, fitnessKinds } from "@/lib/server/fitness";
 
 export const runtime = "nodejs";
@@ -13,8 +12,8 @@ async function getRef(request: Request, context: Context) {
   const { kind, recordId } = await context.params;
   if (!fitnessKinds.includes(kind as (typeof fitnessKinds)[number])) throw new WorkspaceError("Unknown fitness tracker.", 404);
   if (!recordId || recordId.length > 150 || recordId.includes("/")) throw new WorkspaceError("Invalid record ID.", 400);
-  const workspaceId = await getUserWorkspace(user.uid);
-  const ref = adminDb.collection("workspaces").doc(workspaceId).collection(kind).doc(recordId);
+  const { root, workspaceId } = await getUserFitnessRoot(user.uid);
+  const ref = root.collection(kind).doc(recordId);
   const snapshot = await ref.get();
   if (!snapshot.exists) throw new WorkspaceError("Entry not found.", 404);
   const record = snapshot.data()!;

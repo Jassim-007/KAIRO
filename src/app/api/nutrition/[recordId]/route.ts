@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
 import { FieldValue } from "firebase-admin/firestore";
 
-import { adminDb } from "@/lib/server/firebase-admin";
 import {
   enforceRateLimit,
   requireUser,
@@ -9,7 +8,7 @@ import {
   WorkspaceError,
 } from "@/lib/server/workspace-security";
 import {
-  getUserWorkspace,
+  getUserFitnessRoot,
   validateNutrition,
 } from "@/lib/server/nutrition";
 
@@ -21,7 +20,7 @@ type RouteContext = {
 };
 
 async function getRecordReference(
-  workspaceId: string,
+  root: FirebaseFirestore.DocumentReference,
   recordId: string,
   uid: string,
 ) {
@@ -36,11 +35,7 @@ async function getRecordReference(
     );
   }
 
-  const ref = adminDb
-    .collection("workspaces")
-    .doc(workspaceId)
-    .collection("nutrition")
-    .doc(recordId);
+  const ref = root.collection("nutrition").doc(recordId);
 
   const snapshot = await ref.get();
 
@@ -72,9 +67,9 @@ export async function PATCH(
     );
 
     const { recordId } = await context.params;
-    const workspaceId = await getUserWorkspace(user.uid);
+    const { root } = await getUserFitnessRoot(user.uid);
     const recordRef = await getRecordReference(
-      workspaceId,
+      root,
       recordId,
       user.uid,
     );
@@ -112,9 +107,9 @@ export async function DELETE(
     );
 
     const { recordId } = await context.params;
-    const workspaceId = await getUserWorkspace(user.uid);
+    const { root } = await getUserFitnessRoot(user.uid);
     const recordRef = await getRecordReference(
-      workspaceId,
+      root,
       recordId,
       user.uid,
     );

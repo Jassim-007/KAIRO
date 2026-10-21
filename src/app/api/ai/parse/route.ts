@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server";
-import { adminDb } from "@/lib/server/firebase-admin";
-import { getUserWorkspace } from "@/lib/server/nutrition";
+import { getUserFitnessRoot } from "@/lib/server/nutrition";
 import { recordGeminiUsage } from "@/lib/server/gemini-usage";
 import { requireUser, workspaceErrorResponse, WorkspaceError } from "@/lib/server/workspace-security";
 
@@ -67,12 +66,12 @@ function historyDate(text: string, defaultDate: string): string | null {
   return /\btoday\b/i.test(text) ? defaultDate : null;
 }
 async function answerFromSavedHistory(uid: string, date: string) {
-  const workspaceId = await getUserWorkspace(uid), workspace = adminDb.collection("workspaces").doc(workspaceId);
+  const { root } = await getUserFitnessRoot(uid);
   const [nutrition, water, weight, workouts] = await Promise.all([
-    workspace.collection("nutrition").where("loggedBy", "==", uid).where("date", "==", date).limit(80).get(),
-    workspace.collection("water").where("loggedBy", "==", uid).where("date", "==", date).limit(80).get(),
-    workspace.collection("weight").where("subjectUid", "==", uid).where("date", "==", date).limit(80).get(),
-    workspace.collection("workouts").where("subjectUid", "==", uid).where("date", "==", date).limit(80).get(),
+    root.collection("nutrition").where("loggedBy", "==", uid).where("date", "==", date).limit(80).get(),
+    root.collection("water").where("loggedBy", "==", uid).where("date", "==", date).limit(80).get(),
+    root.collection("weight").where("subjectUid", "==", uid).where("date", "==", date).limit(80).get(),
+    root.collection("workouts").where("subjectUid", "==", uid).where("date", "==", date).limit(80).get(),
   ]);
   const foods = nutrition.docs.filter((doc) => doc.data().loggedBy === uid).map((doc) => String(doc.data().foodName || "Meal") + (doc.data().calories == null ? "" : " (" + Math.round(Number(doc.data().calories)) + " kcal)"));
   const waterMl = water.docs.filter((doc) => doc.data().loggedBy === uid).reduce((sum, doc) => sum + Number(doc.data().amountMl || 0), 0);
@@ -93,8 +92,8 @@ async function answerRecentSavedHistory(uid: string, endDate: string, question: 
   const days = /\b(?:last|past) (?:week|7 days)\b/i.test(question) ? 7 : 30;
   const start = new Date(end); start.setUTCDate(start.getUTCDate() - (days - 1));
   const startDate = start.toISOString().slice(0, 10);
-  const workspaceId = await getUserWorkspace(uid), workspace = adminDb.collection("workspaces").doc(workspaceId);
-  const range = (name: string, ownerField: "loggedBy" | "subjectUid") => workspace.collection(name).where(ownerField, "==", uid).where("date", ">=", startDate).where("date", "<=", endDate).orderBy("date", "desc").limit(80).get();
+  const { root } = await getUserFitnessRoot(uid);
+  const range = (name: string, ownerField: "loggedBy" | "subjectUid") => root.collection(name).where(ownerField, "==", uid).where("date", ">=", startDate).where("date", "<=", endDate).orderBy("date", "desc").limit(80).get();
   const [nutrition, water, weight, workouts] = await Promise.all([range("nutrition", "loggedBy"), range("water", "loggedBy"), range("weight", "subjectUid"), range("workouts", "subjectUid")]);
   const wants = (name: string) => !/\b(food|meal|nutrition|calorie|protein)\b/i.test(question) && !/\b(water|hydration|drink)\b/i.test(question) && !/\b(weight|weigh|scale)\b/i.test(question) && !/\b(workout|exercise|training|lift|gym)\b/i.test(question)
     || name === "nutrition" && /\b(food|meal|nutrition|calorie|protein)\b/i.test(question)

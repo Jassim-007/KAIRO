@@ -1,8 +1,7 @@
 import { FieldValue } from "firebase-admin/firestore";
 import { NextResponse } from "next/server";
-import { adminDb } from "@/lib/server/firebase-admin";
 import { enforceRateLimit, requireUser, workspaceErrorResponse, WorkspaceError } from "@/lib/server/workspace-security";
-import { getUserWorkspace } from "@/lib/server/nutrition";
+import { getUserFitnessRoot } from "@/lib/server/nutrition";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -36,8 +35,8 @@ function validatePlan(value: unknown) {
 export async function GET(request: Request) {
   try {
     const user = await requireUser(request); await enforceRateLimit(user.uid, "fitness_plan_read", 120, 3600000);
-    const workspaceId = await getUserWorkspace(user.uid);
-    const snap = await adminDb.collection("workspaces").doc(workspaceId).collection("fitnessPlans").doc(user.uid).get();
+    const { root } = await getUserFitnessRoot(user.uid);
+    const snap = await root.collection("fitnessPlans").doc(user.uid).get();
     return NextResponse.json({ days: snap.exists ? snap.data()?.days ?? [] : dayNames.map((day) => ({ day, routines: [] })), updatedAt: snap.data()?.updatedAt?.toDate?.()?.toISOString?.() ?? null });
   } catch (error) { return workspaceErrorResponse(error); }
 }
@@ -45,8 +44,8 @@ export async function PUT(request: Request) {
   try {
     const user = await requireUser(request); await enforceRateLimit(user.uid, "fitness_plan_update", 40, 3600000);
     const body = await request.json().catch(() => null); const days = validatePlan(body);
-    const workspaceId = await getUserWorkspace(user.uid);
-    await adminDb.collection("workspaces").doc(workspaceId).collection("fitnessPlans").doc(user.uid).set({ ownerUid: user.uid, days, updatedAt: FieldValue.serverTimestamp() });
+    const { root } = await getUserFitnessRoot(user.uid);
+    await root.collection("fitnessPlans").doc(user.uid).set({ ownerUid: user.uid, days, updatedAt: FieldValue.serverTimestamp() });
     return NextResponse.json({ success: true, days });
   } catch (error) { return workspaceErrorResponse(error); }
 }

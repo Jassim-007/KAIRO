@@ -1,4 +1,4 @@
-# FORM/AI Fitness Tracker
+# KAIRO Fitness Tracker
 
 A mobile-friendly fitness tracker for a couple or small invite-only group. The app combines manual trackers with an optional natural-language capture flow.
 

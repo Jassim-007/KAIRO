@@ -1,4 +1,4 @@
-# FORM/AI public release readiness
+# KAIRO public release readiness
 
 ## Implemented in this pass
 

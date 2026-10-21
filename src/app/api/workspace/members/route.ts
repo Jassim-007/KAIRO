@@ -26,11 +26,32 @@ export async function GET(request: Request) {
     const membershipSnapshot = await membershipRef.get();
 
     if (!membershipSnapshot.exists) {
-      throw new WorkspaceError("You haven't joined a workspace yet.", 404);
+      const requestedDate = new URL(request.url).searchParams.get("date");
+      const date = requestedDate ?? new Date().toISOString().slice(0, 10);
+      const parsedDate = /^\d{4}-\d{2}-\d{2}$/.test(date) ? new Date(`${date}T00:00:00.000Z`) : null;
+      if (!parsedDate || Number.isNaN(parsedDate.getTime()) || parsedDate.toISOString().slice(0, 10) !== date) {
+        throw new WorkspaceError("Choose a valid activity date.", 400);
+      }
+      return NextResponse.json({ workspace: null, members: [], activityDate: date, sharedActivity: { nutrition: [], water: [], weight: [], workouts: [] }, currentUserId: user.uid });
     }
 
     const membership = membershipSnapshot.data()!;
-    const workspaceId = String(membership.workspaceId);
+
+if (membership.status === "deleting") {
+  throw new WorkspaceError(
+    "Your account is being deleted. Please try again later.",
+    410,
+  );
+}
+
+const workspaceId = membership.workspaceId;
+
+if (typeof workspaceId !== "string" || !workspaceId.trim()) {
+  throw new WorkspaceError(
+    "Your workspace membership is invalid.",
+    403,
+  );
+}
 
     const workspaceRef = adminDb
       .collection("workspaces")
@@ -41,6 +62,12 @@ export async function GET(request: Request) {
     if (!workspaceSnapshot.exists) {
       throw new WorkspaceError("Your workspace could not be found.", 404);
     }
+    if (workspaceSnapshot.data()?.status === "deleting") {
+  throw new WorkspaceError(
+    "This workspace is being deleted. Please try again later.",
+    410,
+  );
+}
 
     const membersSnapshot = await adminDb
       .collection("workspaceMembers")
@@ -50,6 +77,8 @@ export async function GET(request: Request) {
     const members = membersSnapshot.docs.map((doc) => {
       const member = doc.data();
 
+      if (member.status === "deleting" || member.status === "leaving") return null;
+
       return {
         uid: doc.id,
         displayName: member.displayName ?? "Member",
@@ -57,7 +86,7 @@ export async function GET(request: Request) {
         role: member.role ?? "member",
         joinedAt: member.joinedAt?.toDate?.()?.toISOString?.() ?? null,
       };
-    });
+    }).filter((member): member is NonNullable<typeof member> => member !== null);
     const memberNames = new Map(members.map((member) => [member.uid, String(member.displayName || "Member")]));
 
     const requestedDate = new URL(request.url).searchParams.get("date");

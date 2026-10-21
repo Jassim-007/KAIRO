@@ -1,35 +1,199 @@
 @import "tailwindcss";
 
-/* Consistent, accessible controls across every FORM/AI page. */
+/* ──────────────────────────────────────────────────────────────
+   KAIRO · "Daylight" design system
+   Light is the default (warm paper + periwinkle + butter); dark
+   follows the system and uses the deep-navy night palette.
+   Every colour in the app resolves to one of these tokens.
+   ────────────────────────────────────────────────────────────── */
+
+:root {
+  color-scheme: light;
+  --c-canvas: #faf7f0;
+  --c-canvas-2: #f3eefa;
+  --c-surface: rgb(255 254 250 / 0.82);
+  --c-surface-solid: #fffefa;
+  --c-sunken: rgb(98 104 190 / 0.075);
+  --c-field: #fffefa;
+  --c-ink: #1d2050;
+  --c-ink-soft: #4a4e72;
+  --c-ink-mute: #666a8a;
+  --c-line: rgb(29 32 80 / 0.1);
+  --c-line-strong: rgb(29 32 80 / 0.24);
+  --c-periwinkle: #4a4fa3;
+  --c-lavender: #d9dbf6;
+  --c-butter: #fbe38a;
+  --c-butter-hover: #f7d664;
+  --c-butter-ink: #1d2050;
+  --c-navy: #2a2e57;
+  --c-sage: #5f8f6b;
+  --c-success: #2c6a43;
+  --c-warn: #85560a;
+  --c-danger: #ad2f3c;
+  --c-scrim: rgb(24 26 62 / 0.5);
+  --sh-card: 0 1px 0 rgb(255 255 255 / 0.9) inset, 0 10px 30px -14px rgb(60 64 140 / 0.28), 0 2px 6px -2px rgb(60 64 140 / 0.08);
+  --sh-lift: 0 24px 60px -20px rgb(40 44 110 / 0.45);
+  --glow-a: rgb(201 204 244 / 0.75);
+  --glow-b: rgb(251 227 138 / 0.55);
+  --ease: cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    color-scheme: dark;
+    --c-canvas: #111329;
+    --c-canvas-2: #181b3d;
+    --c-surface: rgb(30 33 72 / 0.72);
+    --c-surface-solid: #1c1f47;
+    --c-sunken: rgb(140 146 230 / 0.1);
+    --c-field: #171a3e;
+    --c-ink: #f4f1e8;
+    --c-ink-soft: #c2c5e2;
+    --c-ink-mute: #9a9ec4;
+    --c-line: rgb(190 195 255 / 0.12);
+    --c-line-strong: rgb(190 195 255 / 0.28);
+    --c-periwinkle: #b4b8fb;
+    --c-lavender: #3a3e82;
+    --c-butter: #fbe38a;
+    --c-butter-hover: #fdeba8;
+    --c-navy: #fbe38a;
+    --c-sage: #8fc19b;
+    --c-success: #9bd3a8;
+    --c-warn: #f0c36b;
+    --c-danger: #ff9aa4;
+    --c-scrim: rgb(6 7 24 / 0.66);
+    --sh-card: 0 1px 0 rgb(255 255 255 / 0.05) inset, 0 14px 34px -16px rgb(0 0 0 / 0.6);
+    --sh-lift: 0 24px 60px -20px rgb(0 0 0 / 0.8);
+    --glow-a: rgb(86 92 190 / 0.32);
+    --glow-b: rgb(251 227 138 / 0.12);
+  }
+}
+
+@theme inline {
+  --color-canvas: var(--c-canvas);
+  --color-surface: var(--c-surface);
+  --color-sunken: var(--c-sunken);
+  --color-field: var(--c-field);
+  --color-ink: var(--c-ink);
+  --color-ink-soft: var(--c-ink-soft);
+  --color-ink-mute: var(--c-ink-mute);
+  --color-line: var(--c-line);
+  --color-line-strong: var(--c-line-strong);
+  --color-periwinkle: var(--c-periwinkle);
+  --color-lavender: var(--c-lavender);
+  --color-butter: var(--c-butter);
+  --color-butter-hover: var(--c-butter-hover);
+  --color-butter-ink: var(--c-butter-ink);
+  --color-navy: var(--c-navy);
+  --color-sage: var(--c-sage);
+  --color-success: var(--c-success);
+  --color-warn: var(--c-warn);
+  --color-danger: var(--c-danger);
+  --color-scrim: var(--c-scrim);
+  --shadow-card: var(--sh-card);
+  --shadow-lift: var(--sh-lift);
+  --font-sans: var(--f-body), ui-sans-serif, system-ui, sans-serif;
+  --font-display: var(--f-display), var(--f-body), ui-sans-serif, system-ui, sans-serif;
+  --font-hand: var(--f-hand), "Segoe Print", cursive;
+}
+
+/* ── Base ─────────────────────────────────────────────────── */
 @layer base {
+  html {
+    scroll-behavior: smooth;
+    -webkit-text-size-adjust: 100%;
+    -webkit-tap-highlight-color: transparent;
+    overscroll-behavior-y: none;
+  }
+
+  body {
+    background-color: var(--c-canvas);
+    color: var(--c-ink);
+    font-family: var(--f-body), ui-sans-serif, system-ui, sans-serif;
+    text-rendering: optimizeLegibility;
+    -webkit-font-smoothing: antialiased;
+    min-height: 100dvh;
+    position: relative;
+  }
+
+  /* Ambient daylight: a soft lavender wash + a low sun, fixed behind everything. */
+  body::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    z-index: -1;
+    pointer-events: none;
+    background:
+      radial-gradient(60rem 36rem at -10% -8%, var(--glow-a), transparent 62%),
+      radial-gradient(26rem 26rem at 108% 4%, var(--glow-b), transparent 66%),
+      linear-gradient(180deg, var(--c-canvas), var(--c-canvas-2) 120%);
+  }
+
+  h1,
+  h2,
+  h3 {
+    font-family: var(--f-display), var(--f-body), ui-sans-serif, system-ui, sans-serif;
+    letter-spacing: -0.022em;
+    text-wrap: balance;
+  }
+
+  p {
+    text-wrap: pretty;
+  }
+
+  ::selection {
+    background: var(--c-butter);
+    color: var(--c-butter-ink);
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--c-periwinkle);
+    outline-offset: 2px;
+    border-radius: 0.5rem;
+  }
+
+  button,
+  a,
+  summary {
+    touch-action: manipulation;
+  }
+
+  button:not(:disabled) {
+    cursor: pointer;
+  }
+
+  button:disabled {
+    cursor: not-allowed;
+  }
+
   input:not([type="checkbox"]):not([type="radio"]):not([type="range"]),
   select,
   textarea {
-    color-scheme: dark;
-    border: 1px solid rgb(255 255 255 / 12%);
-    border-radius: 0.75rem;
-    background-color: #11130f;
-    color: #f4f4f0;
-    transition: border-color 150ms ease, box-shadow 150ms ease, background-color 150ms ease;
+    border: 1px solid var(--c-line-strong);
+    border-radius: 1rem;
+    background-color: var(--c-surface-solid);
+    color: var(--c-ink);
+    transition: border-color 160ms ease, box-shadow 160ms ease, background-color 160ms ease;
   }
 
   input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):hover,
   select:hover,
   textarea:hover {
-    border-color: rgb(255 255 255 / 22%);
+    border-color: color-mix(in oklab, var(--c-periwinkle) 55%, transparent);
   }
 
   input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):focus-visible,
   select:focus-visible,
   textarea:focus-visible {
-    border-color: #bef264;
+    border-color: var(--c-periwinkle);
     outline: none;
-    box-shadow: 0 0 0 3px rgb(190 242 100 / 16%);
+    box-shadow: 0 0 0 4px color-mix(in oklab, var(--c-periwinkle) 22%, transparent);
   }
 
   input::placeholder,
   textarea::placeholder {
-    color: #777b70;
+    color: var(--c-ink-mute);
+    opacity: 0.8;
   }
 
   input:disabled,
@@ -38,29 +202,257 @@
     cursor: not-allowed;
     opacity: 0.55;
   }
-}
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
-
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+  input[type="range"],
+  input[type="checkbox"],
+  input[type="radio"] {
+    accent-color: var(--c-periwinkle);
   }
 }
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+/* ── Components ───────────────────────────────────────────── */
+@layer components {
+  /* The one card surface: frosted paper with a hairline and a soft lift. */
+  .card {
+    background-color: var(--c-surface);
+    border: 1px solid var(--c-line);
+    box-shadow: var(--sh-card);
+    -webkit-backdrop-filter: blur(14px) saturate(1.15);
+    backdrop-filter: blur(14px) saturate(1.15);
+  }
+
+  @supports not (backdrop-filter: blur(1px)) {
+    .card {
+      background-color: var(--c-surface-solid);
+    }
+  }
+
+  /* Filled primary buttons become pills with a press feel. */
+  button.bg-butter,
+  a.bg-butter {
+    border-radius: 9999px;
+    box-shadow: 0 6px 16px -8px rgb(181 137 0 / 0.55), 0 1px 0 rgb(255 255 255 / 0.5) inset;
+    transition: background-color 160ms ease, transform 160ms var(--ease), box-shadow 160ms ease;
+  }
+
+  button.bg-butter:hover:not(:disabled),
+  a.bg-butter:hover {
+    background-color: var(--c-butter-hover);
+  }
+
+  button:active:not(:disabled),
+  a.bg-butter:active {
+    transform: scale(0.97);
+  }
+
+  button {
+    transition: transform 160ms var(--ease), background-color 160ms ease, border-color 160ms ease, color 160ms ease, opacity 160ms ease;
+  }
+
+  /* Hand-written margin notes, borrowed from the Daylight reference. */
+  .note {
+    font-family: var(--f-hand), "Segoe Print", cursive;
+    color: var(--c-ink-mute);
+    line-height: 1.15;
+  }
+
+  .eyebrow {
+    font-size: 0.7rem;
+    font-weight: 700;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: var(--c-periwinkle);
+  }
+
+  .scroll-x {
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+  .scroll-x::-webkit-scrollbar {
+    display: none;
+  }
+
+  .num {
+    font-family: var(--f-display), var(--f-body), sans-serif;
+    font-variant-numeric: tabular-nums;
+    letter-spacing: -0.03em;
+  }
+}
+
+/* ── Motion ───────────────────────────────────────────────── */
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(16px) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes page-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes sheet-up {
+  from {
+    opacity: 0;
+    transform: translateY(40px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes fade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes draw-ring {
+  from {
+    stroke-dashoffset: var(--ring-len);
+  }
+}
+
+@keyframes sway {
+  0%,
+  100% {
+    transform: rotate(-1.2deg);
+  }
+  50% {
+    transform: rotate(1.4deg);
+  }
+}
+
+@keyframes sun-breathe {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.06);
+  }
+}
+
+@keyframes grow-x {
+  from {
+    transform: scaleX(0);
+  }
+  to {
+    transform: scaleX(1);
+  }
+}
+
+main {
+  animation: page-in 380ms var(--ease) both;
+}
+
+.card {
+  animation: rise 560ms var(--ease) both;
+}
+
+.card:nth-child(2) {
+  animation-delay: 60ms;
+}
+.card:nth-child(3) {
+  animation-delay: 110ms;
+}
+.card:nth-child(n + 4) {
+  animation-delay: 150ms;
+}
+
+/* Scroll-driven reveal where supported (Chrome/Android); the keyframes above are the fallback. */
+@supports (animation-timeline: view()) {
+  .card {
+    animation: rise linear both;
+    animation-delay: 0s !important;
+    animation-timeline: view();
+    animation-range: entry 0% entry 42%;
+  }
+
+  .scroll-progress {
+    animation: grow-x linear both;
+    animation-timeline: scroll(root);
+  }
+}
+
+.scroll-progress {
+  transform-origin: 0 50%;
+}
+
+@supports not (animation-timeline: scroll()) {
+  .scroll-progress {
+    display: none;
+  }
+}
+
+.sheet-in,
+.card.sheet-in {
+  animation: sheet-up 320ms var(--ease) both;
+  animation-timeline: auto;
+  animation-range: normal;
+  animation-delay: 0s !important;
+}
+.scrim-in {
+  animation: fade 220ms ease both;
+}
+.sway {
+  transform-origin: 50% 100%;
+  animation: sway 7s ease-in-out infinite;
+}
+.sun {
+  transform-origin: 50% 50%;
+  animation: sun-breathe 6s ease-in-out infinite;
+}
+.ring-draw {
+  animation: draw-ring 1.1s var(--ease) both;
+}
+
+/* Inputs: keep 16px on touch so mobile browsers never zoom into a field. */
+@media (pointer: coarse) {
+  input:not([type="checkbox"]):not([type="radio"]):not([type="range"]),
+  select,
+  textarea {
+    font-size: 16px;
+    min-height: 2.9rem;
+  }
+
+  button:not([aria-label]):not(.rounded-full) {
+    min-height: 2.5rem;
+  }
+}
+
+@media (max-width: 640px) {
+  .card {
+    -webkit-backdrop-filter: blur(10px);
+    backdrop-filter: blur(10px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    animation-delay: 0s !important;
+    transition-duration: 0.01ms !important;
+  }
 }
