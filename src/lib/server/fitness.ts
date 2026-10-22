@@ -225,6 +225,12 @@ export async function parseFitnessEntry(
     workoutType,
     exercises,
     notes,
+    ...(typeof data.planRoutineId === "string" && data.planRoutineId.length <= 80
+      ? { planRoutineId: data.planRoutineId }
+      : {}),
+    ...(typeof data.planDay === "string" && data.planDay.length <= 20
+      ? { planDay: data.planDay }
+      : {}),
     ...(typeof data.durationMinutes === "number" &&
     Number.isFinite(data.durationMinutes)
       ? {

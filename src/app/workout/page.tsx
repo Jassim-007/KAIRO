@@ -1,7 +1,7 @@
 
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { onAuthStateChanged, type User } from "firebase/auth";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
@@ -29,30 +29,117 @@ type Day = {
   routines: Routine[];
 };
 
+/** Per-set state uses strings so numeric inputs can be cleared naturally. */
 type SetRow = {
-  weightKg: number;
-  reps: number;
+  weightKgStr: string;
+  repsStr: string;
   rir: number | null;
   done: boolean;
 };
 
+// --------------------------------------------------------------------------
+// Helpers
+// --------------------------------------------------------------------------
+
 const todayKey = () => {
   const date = new Date();
-
-  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(
-    2,
-    "0",
-  )}-${String(date.getDate()).padStart(2, "0")}`;
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
 };
+
+/** Map any routine workoutType string to the server-accepted enum. */
+function toWorkoutTypeEnum(raw: string): "Push" | "Pull" | "Legs" | "Custom" {
+  const lower = raw.toLowerCase();
+  if (lower.includes("push")) return "Push";
+  if (lower.includes("pull")) return "Pull";
+  if (lower.includes("leg")) return "Legs";
+  return "Custom";
+}
 
 function makeSet(weightKg = 0, reps = 10): SetRow {
   return {
-    weightKg,
-    reps,
+    weightKgStr: weightKg === 0 ? "" : String(weightKg),
+    repsStr: String(reps),
     rir: null,
     done: false,
   };
 }
+
+/** Coerce a string field to a valid weight number (>= 0). Returns NaN if empty. */
+function parseWeight(str: string): number {
+  if (str.trim() === "") return 0;
+  const n = Number(str);
+  return Number.isFinite(n) && n >= 0 ? n : 0;
+}
+
+/** Coerce a string field to a valid reps integer (>= 1). Returns 1 if invalid. */
+function parseReps(str: string): number {
+  if (str.trim() === "") return 1;
+  const n = Math.round(Number(str));
+  return Number.isFinite(n) && n >= 1 ? n : 1;
+}
+
+// --------------------------------------------------------------------------
+// Session persistence via localStorage (crash recovery)
+// --------------------------------------------------------------------------
+
+const SESSION_KEY_PREFIX = "kairo_session_";
+
+interface PersistedSession {
+  routineId: string;
+  planDay: string;
+  scheduledDate: string;
+  rows: SetRow[][];
+  exerciseIndex: number;
+  savedAt: number;
+}
+
+function sessionKey(routineId: string, uid: string) {
+  return `${SESSION_KEY_PREFIX}${uid}_${routineId}`;
+}
+
+function saveSession(uid: string, routine: Routine, planDay: string, scheduledDate: string, rows: SetRow[][], exerciseIndex: number) {
+  try {
+    const payload: PersistedSession = {
+      routineId: routine.id,
+      planDay,
+      scheduledDate,
+      rows,
+      exerciseIndex,
+      savedAt: Date.now(),
+    };
+    localStorage.setItem(sessionKey(routine.id, uid), JSON.stringify(payload));
+  } catch {
+    // storage may be unavailable in private mode
+  }
+}
+
+function loadSession(uid: string, routineId: string): PersistedSession | null {
+  try {
+    const raw = localStorage.getItem(sessionKey(routineId, uid));
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as PersistedSession;
+    // Discard sessions older than 6 hours
+    if (Date.now() - parsed.savedAt > 6 * 60 * 60 * 1000) {
+      localStorage.removeItem(sessionKey(routineId, uid));
+      return null;
+    }
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+function clearSession(uid: string, routineId: string) {
+  try {
+    localStorage.removeItem(sessionKey(routineId, uid));
+  } catch {
+    // ignore
+  }
+}
+
+// --------------------------------------------------------------------------
+// Component
+// --------------------------------------------------------------------------
 
 export default function WorkoutPage() {
   const router = useRouter();
@@ -66,17 +153,23 @@ export default function WorkoutPage() {
   const [finished, setFinished] = useState(false);
   const [addingExercise, setAddingExercise] = useState(false);
   const [newExercise, setNewExercise] = useState("");
+  const [scheduledDate, setScheduledDate] = useState(todayKey());
+  const [planDay, setPlanDay] = useState("");
+  const [restoredNotice, setRestoredNotice] = useState(false);
+
+  // Idempotency: track a session token so double-clicks or retries don't duplicate.
+  const sessionTokenRef = useRef(crypto.randomUUID());
 
   useEffect(() => {
     return onAuthStateChanged(auth, (currentUser) => {
       setUser(currentUser);
-
       if (!currentUser) {
         router.replace("/login");
       }
     });
   }, [router]);
 
+  // Load plan and restore session if available
   useEffect(() => {
     let alive = true;
 
@@ -101,7 +194,7 @@ export default function WorkoutPage() {
 
         const params = new URLSearchParams(window.location.search);
 
-        const day =
+        const dayParam =
           params.get("day") ||
           new Intl.DateTimeFormat("en-US", {
             weekday: "long",
@@ -112,54 +205,63 @@ export default function WorkoutPage() {
 
         const selected =
           days
-            .find((item) => item.day === day)
+            .find((item) => item.day === dayParam)
             ?.routines.find((item) => item.id === routineId) ||
-          days.find((item) => item.day === day)?.routines[0];
+          days.find((item) => item.day === dayParam)?.routines[0];
 
         const fallback: Routine = {
           id: "quick-start",
           name: "Full Body · Quick Start",
           workoutType: "Custom",
           exercises: [
-            {
-              name: "Goblet Squat",
-              sets: 3,
-              reps: 10,
-              weightKg: 0,
-              muscle: "Quads",
-              equipment: "Dumbbell",
-            },
-            {
-              name: "Push-up",
-              sets: 3,
-              reps: 10,
-              weightKg: 0,
-              muscle: "Chest",
-              equipment: "Bodyweight",
-            },
-            {
-              name: "Dumbbell Row",
-              sets: 3,
-              reps: 10,
-              weightKg: 0,
-              muscle: "Back",
-              equipment: "Dumbbell",
-            },
+            { name: "Goblet Squat", sets: 3, reps: 10, weightKg: 0, muscle: "Quads", equipment: "Dumbbell" },
+            { name: "Push-up", sets: 3, reps: 10, weightKg: 0, muscle: "Chest", equipment: "Bodyweight" },
+            { name: "Dumbbell Row", sets: 3, reps: 10, weightKg: 0, muscle: "Back", equipment: "Dumbbell" },
           ],
         };
 
         if (alive) {
           const chosenRoutine = selected || fallback;
 
-          setRoutine(chosenRoutine);
+          // Derive the scheduled date from the day name
+          let derivedDate = todayKey();
+          if (params.get("date")) {
+            derivedDate = params.get("date")!;
+          } else if (dayParam) {
+            // Find the date for this day name in the current week
+            const dayNames = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+            const targetIndex = dayNames.indexOf(dayParam);
+            if (targetIndex !== -1) {
+              const now = new Date();
+              const currentDay = now.getDay();
+              const diff = targetIndex - currentDay;
+              // A plan day belongs to that weekday in the current calendar week.
+              const target = new Date(now);
+              target.setDate(now.getDate() + diff);
+              derivedDate = `${target.getFullYear()}-${String(target.getMonth() + 1).padStart(2, "0")}-${String(target.getDate()).padStart(2, "0")}`;
+            }
+          }
 
-          setRows(
-            chosenRoutine.exercises.map((item) =>
-              Array.from({ length: item.sets }, () =>
-                makeSet(item.weightKg, item.reps),
+          setScheduledDate(derivedDate);
+          setPlanDay(dayParam);
+
+          // Try to restore a previous session for this routine
+          const saved = loadSession(user.uid, chosenRoutine.id);
+          if (saved && saved.rows.length === chosenRoutine.exercises.length) {
+            setRoutine(chosenRoutine);
+            setRows(saved.rows);
+            setExercise(Math.min(saved.exerciseIndex, chosenRoutine.exercises.length - 1));
+            setRestoredNotice(true);
+          } else {
+            setRoutine(chosenRoutine);
+            setRows(
+              chosenRoutine.exercises.map((item) =>
+                Array.from({ length: item.sets }, () =>
+                  makeSet(item.weightKg, item.reps),
+                ),
               ),
-            ),
-          );
+            );
+          }
         }
       } catch (err) {
         if (alive) {
@@ -178,6 +280,12 @@ export default function WorkoutPage() {
       alive = false;
     };
   }, [user]);
+
+  // Persist session to localStorage whenever rows or exercise index change
+  useEffect(() => {
+    if (!user || !routine || finished) return;
+    saveSession(user.uid, routine, planDay, scheduledDate, rows, exercise);
+  }, [user, routine, planDay, scheduledDate, rows, exercise, finished]);
 
   const completed = useMemo(
     () => rows.flat().filter((set) => set.done).length,
@@ -213,10 +321,20 @@ export default function WorkoutPage() {
           ? [
               ...group,
               makeSet(
-                group.at(-1)?.weightKg ?? 0,
-                group.at(-1)?.reps ?? 10,
+                parseWeight(group.at(-1)?.weightKgStr ?? ""),
+                parseReps(group.at(-1)?.repsStr ?? "10"),
               ),
             ]
+          : group,
+      ),
+    );
+  }
+
+  function removeSet(setIndex: number) {
+    setRows((allRows) =>
+      allRows.map((group, groupIndex) =>
+        groupIndex === exercise
+          ? group.filter((_, i) => i !== setIndex)
           : group,
       ),
     );
@@ -266,16 +384,23 @@ export default function WorkoutPage() {
     try {
       const token = await user.getIdToken();
 
+      // Map workoutType to valid enum value
+      const workoutTypeEnum = toWorkoutTypeEnum(routine.workoutType);
+
       const response = await fetch("/api/fitness/workouts", {
         method: "POST",
         headers: {
           Authorization: `Bearer ${token}`,
           "Content-Type": "application/json",
+          // Idempotency: same session token = same record (server ignores subsequent)
+          "X-Idempotency-Key": sessionTokenRef.current,
         },
         body: JSON.stringify({
-          date: todayKey(),
-          workoutType: routine.workoutType,
+          date: scheduledDate,
+          workoutType: workoutTypeEnum,
           notes: routine.name,
+          planRoutineId: routine.id,
+          planDay,
           exercises: routine.exercises.flatMap((item, index) => {
             const doneSets = (rows[index] || []).filter(
               (set) => set.done,
@@ -283,21 +408,20 @@ export default function WorkoutPage() {
 
             if (doneSets.length === 0) return [];
 
+            const weightValues = doneSets.map((set) => parseWeight(set.weightKgStr));
+            const repsValues = doneSets.map((set) => parseReps(set.repsStr));
+
             return [
               {
                 ...item,
                 sets: doneSets.length,
                 reps: Math.round(
-                  doneSets.reduce((sum, set) => sum + set.reps, 0) /
-                    doneSets.length,
+                  repsValues.reduce((sum, r) => sum + r, 0) / doneSets.length,
                 ),
-                weightKg: Math.max(
-                  0,
-                  ...doneSets.map((set) => set.weightKg),
-                ),
-                setDetails: doneSets.map((set) => ({
-                  weightKg: set.weightKg,
-                  reps: set.reps,
+                weightKg: Math.max(0, ...weightValues),
+                setDetails: doneSets.map((set, i) => ({
+                  weightKg: weightValues[i],
+                  reps: repsValues[i],
                   rir: set.rir,
                   completed: set.done,
                 })),
@@ -313,6 +437,8 @@ export default function WorkoutPage() {
         throw new Error(data.error || "Could not save this session.");
       }
 
+      // Clear persisted session on successful save
+      clearSession(user.uid, routine.id);
       setFinished(true);
       window.dispatchEvent(new CustomEvent("fitness-record-saved"));
     } catch (err) {
@@ -354,7 +480,7 @@ export default function WorkoutPage() {
           <div className="min-w-0 text-center">
             <h1 className="font-bold">{routine.name}</h1>
             <p className="text-sm text-ink-soft">
-              {completed}/{total} sets completed · take your time
+              {completed}/{total} sets completed · {scheduledDate}
             </p>
           </div>
 
@@ -365,6 +491,19 @@ export default function WorkoutPage() {
             + Exercise
           </button>
         </div>
+
+        {restoredNotice && (
+          <div className="flex items-center justify-between gap-3 rounded-2xl border border-periwinkle/30 bg-periwinkle/10 px-4 py-2.5 text-sm">
+            <p className="text-periwinkle">Session restored — your progress is still here.</p>
+            <button
+              onClick={() => setRestoredNotice(false)}
+              className="text-xs text-ink-mute"
+              aria-label="Dismiss"
+            >
+              ×
+            </button>
+          </div>
+        )}
 
         <div
           className="h-2 overflow-hidden rounded-full bg-lavender/55"
@@ -471,12 +610,13 @@ export default function WorkoutPage() {
             </>
           )}
 
-          <div className="mt-6 hidden grid-cols-[2rem_1fr_1fr_5rem_2.5rem] gap-2 text-center text-[11px] uppercase tracking-wider text-ink-mute sm:grid">
+          <div className="mt-6 hidden grid-cols-[2rem_1fr_1fr_5rem_2.5rem_2rem] gap-2 text-center text-[11px] uppercase tracking-wider text-ink-mute sm:grid">
             <span>Set</span>
             <span>Weight kg</span>
             <span>Reps</span>
             <span>RIR</span>
             <span>Done</span>
+            <span></span>
           </div>
 
           {current.map((set, index) => (
@@ -508,7 +648,7 @@ export default function WorkoutPage() {
                 </button>
               </div>
 
-              <div className="grid grid-cols-[1fr_1fr] items-end gap-3 sm:grid-cols-[2rem_1fr_1fr_5rem_2.5rem] sm:items-center sm:gap-2">
+              <div className="grid grid-cols-[1fr_1fr] items-end gap-3 sm:grid-cols-[2rem_1fr_1fr_5rem_2.5rem_2rem] sm:items-center sm:gap-2">
                 <span className="hidden text-center text-sm text-ink-mute sm:block">
                   {index + 1}
                 </span>
@@ -518,14 +658,25 @@ export default function WorkoutPage() {
                   <input
                     aria-label={`Set ${index + 1} weight in kg`}
                     type="number"
+                    inputMode="decimal"
                     step="0.5"
                     min="0"
-                    value={set.weightKg}
+                    value={set.weightKgStr}
+                    placeholder="0"
                     onChange={(event) =>
                       updateSet(index, {
-                        weightKg: Math.max(0, Number(event.target.value)),
+                        weightKgStr: event.target.value,
                       })
                     }
+                    onBlur={(event) => {
+                      // Normalize on blur: empty → keep as "" (bodyweight), negative → 0
+                      const raw = event.target.value;
+                      if (raw === "") return; // allow empty (treated as 0 on save)
+                      const n = Number(raw);
+                      if (!Number.isFinite(n) || n < 0) {
+                        updateSet(index, { weightKgStr: "0" });
+                      }
+                    }}
                     className="w-full min-w-0 rounded-xl bg-field p-2.5 text-center text-sm"
                   />
                 </label>
@@ -535,13 +686,26 @@ export default function WorkoutPage() {
                   <input
                     aria-label={`Set ${index + 1} reps`}
                     type="number"
+                    inputMode="numeric"
                     min="1"
-                    value={set.reps}
+                    value={set.repsStr}
+                    placeholder="10"
                     onChange={(event) =>
                       updateSet(index, {
-                        reps: Math.max(1, Number(event.target.value)),
+                        repsStr: event.target.value,
                       })
                     }
+                    onBlur={(event) => {
+                      const raw = event.target.value;
+                      if (raw === "") {
+                        updateSet(index, { repsStr: "1" });
+                        return;
+                      }
+                      const n = Math.round(Number(raw));
+                      if (!Number.isFinite(n) || n < 1) {
+                        updateSet(index, { repsStr: "1" });
+                      }
+                    }}
                     className="w-full min-w-0 rounded-xl bg-field p-2.5 text-center text-sm"
                   />
                 </label>
@@ -582,6 +746,16 @@ export default function WorkoutPage() {
                   }`}
                 >
                   {set.done ? "✓" : ""}
+                </button>
+
+                <button
+                  type="button"
+                  aria-label={`Remove set ${index + 1}`}
+                  onClick={() => removeSet(index)}
+                  className="hidden justify-self-center text-xs text-ink-mute hover:text-ink sm:block"
+                  title="Remove this set"
+                >
+                  ×
                 </button>
               </div>
             </div>
@@ -641,16 +815,23 @@ export default function WorkoutPage() {
             </h2>
 
             <p className="mt-2 text-sm text-ink-soft">
-              {completed} sets completed. Your workout is in your shared
-              training history.
+              {completed} sets completed for {scheduledDate}. Your workout is in your training history.
             </p>
 
-            <button
-              onClick={() => router.push("/stats")}
-              className="mt-4 rounded-xl bg-butter px-4 py-2 text-sm font-bold text-butter-ink"
-            >
-              See your stats
-            </button>
+            <div className="mt-4 flex flex-wrap gap-3">
+              <button
+                onClick={() => router.push("/stats")}
+                className="rounded-xl bg-butter px-4 py-2 text-sm font-bold text-butter-ink"
+              >
+                See your stats
+              </button>
+              <button
+                onClick={() => router.push("/plan")}
+                className="rounded-xl border border-line px-4 py-2 text-sm"
+              >
+                Back to plan
+              </button>
+            </div>
           </section>
         ) : (
           <button
@@ -662,7 +843,7 @@ export default function WorkoutPage() {
               ? "Saving session…"
               : completed === 0
                 ? "Complete a set to save"
-                : "Finish and save workout"}
+                : `Finish & save — ${completed} set${completed === 1 ? "" : "s"} done`}
           </button>
         )}
 

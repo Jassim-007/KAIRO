@@ -12,6 +12,7 @@
   "dependencies": {
     "@musclemap/react": "^1.1.0",
     "@vercel/analytics": "^2.0.1",
+    "@vercel/speed-insights": "^2.0.0",
     "firebase": "^13.0.0",
     "firebase-admin": "^14.5.0",
     "next": "^16.4.2",

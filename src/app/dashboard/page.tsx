@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { onAuthStateChanged, type User } from "firebase/auth";
@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { auth } from "@/lib/firebase";
 import { Ring, PlantScene } from "@/app/components/illustrations";
 import { Icon, type IconName } from "@/app/components/icons";
+import { inferExerciseMuscle } from "@/lib/muscles";
 
 type Summary = {
   date: string;
@@ -19,10 +20,11 @@ type Summary = {
   };
   totals: { workouts: number };
   currentWeight: number | null;
+  hasWeightForDate: boolean;
   goals: { calories?: number | null; protein?: number | null } | null;
 };
 
-type Weight = { id: string; date: string; weightKg: number };
+type Weight = { id: string; date: string; weightKg: number; createdAt?: string };
 
 type Exercise = {
   name: string;
@@ -41,7 +43,15 @@ type Routine = {
 };
 
 type Day = { day: string; routines: Routine[] };
-type Workout = { date: string };
+type Workout = {
+  id: string;
+  date: string;
+  planRoutineId?: string;
+  planDay?: string;
+  workoutType?: string;
+  notes?: string;
+  exercises?: Array<Pick<Exercise, "name" | "sets" | "reps" | "weightKg"> & { muscle?: string }>;
+};
 
 const key = (date: Date) =>
   `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
@@ -115,31 +125,25 @@ export default function DashboardPage() {
     setLoading(true);
 
     try {
-      // Render the daily balance as soon as its request completes instead of
-      // waiting for unrelated history and plan requests too.
-      const progressRequest = tokenRequest(
-        `/api/progress?date=${encodeURIComponent(selectedDate)}`,
+      const overview = await tokenRequest(
+        `/api/dashboard?date=${encodeURIComponent(selectedDate)}`,
       );
-      const supportingDataRequest = Promise.all([
-        tokenRequest("/api/fitness/weight"),
-        tokenRequest("/api/fitness/workouts"),
-        tokenRequest("/api/fitness/plans"),
-      ]);
-      void supportingDataRequest.catch(() => undefined);
-
-      const progress = await progressRequest;
-
-      setSummary(progress);
-      setLoading(false);
-
-      const [weightLog, workoutLog, planData] = await supportingDataRequest;
+      setSummary(overview);
       setWeights(
-        (weightLog.records || [])
+        (overview.records.weights || [])
           .slice()
-          .sort((a: Weight, b: Weight) => a.date.localeCompare(b.date)),
+          .sort((a: Weight, b: Weight) => {
+            // Primary: date string ascending
+            const dateDiff = a.date.localeCompare(b.date);
+            if (dateDiff !== 0) return dateDiff;
+            // Secondary: createdAt timestamp ascending (same-day chronological order)
+            const aCreated = (a as Weight & { createdAt?: string }).createdAt ?? "";
+            const bCreated = (b as Weight & { createdAt?: string }).createdAt ?? "";
+            return aCreated.localeCompare(bCreated);
+          }),
       );
-      setWorkouts(workoutLog.records || []);
-      setPlan(planData.days || []);
+      setWorkouts(overview.records.workouts || []);
+      setPlan(overview.days || []);
       setError("");
     } catch (caught) {
       setError(
@@ -169,6 +173,22 @@ export default function DashboardPage() {
   const chosenDay = weekNames[indexFor(selectedDate)];
   const routines =
     plan.find((day) => day.day === chosenDay)?.routines || [];
+  const selectedDayWorkouts = workouts.filter((workout) => workout.date === selectedDate);
+  const loggedRoutineIds = new Set(
+    selectedDayWorkouts
+      .filter((workout) => !workout.planDay || workout.planDay === chosenDay)
+      .map((workout) => workout.planRoutineId)
+      .filter((id): id is string => Boolean(id)),
+  );
+  const routinesToShow = routines.filter((routine) =>
+    !loggedRoutineIds.has(routine.id) &&
+    !selectedDayWorkouts.some((workout) =>
+      (!workout.planDay || workout.planDay === chosenDay) && workout.notes === routine.name,
+    ),
+  );
+  const hasLoggedWeight =
+    weights.some((weight) => weight.date === selectedDate) ||
+    (summary?.date === selectedDate && summary.hasWeightForDate);
 
   const thisWeek = useMemo(() => {
     const selected = fromKey(selectedDate);
@@ -625,9 +645,9 @@ export default function DashboardPage() {
                   </button>
                 </div>
 
-                {routines.length ? (
+                {routinesToShow.length ? (
                   <div className="mt-4 space-y-3">
-                    {routines.map((routine) => (
+                    {routinesToShow.map((routine) => (
                       <div
                         key={routine.id}
                         className="flex flex-wrap items-center justify-between gap-3 rounded-2xl bg-sunken p-4"
@@ -649,7 +669,7 @@ export default function DashboardPage() {
                           <button
                             onClick={() =>
                               router.push(
-                                `/workout?day=${encodeURIComponent(chosenDay)}&routine=${encodeURIComponent(routine.id)}`,
+                                `/workout?day=${encodeURIComponent(chosenDay)}&date=${encodeURIComponent(selectedDate)}&routine=${encodeURIComponent(routine.id)}`,
                               )
                             }
                             className="rounded-xl bg-butter px-4 py-2 text-sm font-bold text-butter-ink"
@@ -660,6 +680,10 @@ export default function DashboardPage() {
                       </div>
                     ))}
                   </div>
+                ) : selectedDayWorkouts.length > 0 ? (
+                  <p className="mt-4 rounded-2xl bg-sunken p-5 text-sm text-ink-soft">
+                    Today’s planned routine is complete. You can still log another workout from Quick start.
+                  </p>
                 ) : (
                   <div className="mt-4 rounded-2xl bg-sunken p-5 text-sm text-ink-soft">
                     No routine scheduled for {chosenDay}. Add one in Plan, or
@@ -677,6 +701,30 @@ export default function DashboardPage() {
                       >
                         Quick start
                       </button>
+                    </div>
+                  </div>
+                )}
+
+                {selectedDayWorkouts.length > 0 && (
+                  <div className="mt-5 border-t border-line pt-4">
+                    <h3 className="text-sm font-semibold">Logged workouts · {selectedDate}</h3>
+                    <div className="mt-3 space-y-3">
+                      {selectedDayWorkouts.map((workout) => {
+                        const muscles = [...new Set((workout.exercises || [])
+                          .map((item) => inferExerciseMuscle(item.name, item.muscle))
+                          .filter((muscle): muscle is string => Boolean(muscle)))];
+                        return (
+                          <div key={workout.id} className="rounded-2xl bg-sunken p-4">
+                            <p className="font-medium">{workout.notes || workout.workoutType || "Workout"}</p>
+                            {workout.exercises?.map((item, index) => (
+                              <p key={`${workout.id}-${index}`} className="mt-1 text-xs text-ink-soft">
+                                {item.name} · {item.sets} sets × {item.reps} reps
+                              </p>
+                            ))}
+                            <p className="mt-2 text-xs text-periwinkle">Muscles worked: {muscles.length ? muscles.join(", ") : "Not tagged"}</p>
+                          </div>
+                        );
+                      })}
                     </div>
                   </div>
                 )}
@@ -733,7 +781,7 @@ export default function DashboardPage() {
                   </p>
                 )}
 
-                <div className="mt-3 flex gap-2">
+                {!hasLoggedWeight ? <div className="mt-3 flex gap-2">
                   <input
                     aria-label="Weight in kilograms"
                     value={weightInput}
@@ -752,7 +800,7 @@ export default function DashboardPage() {
                   >
                     {savingWeight ? "Saving…" : "＋ Log"}
                   </button>
-                </div>
+                </div> : <p className="mt-3 rounded-xl bg-field px-3 py-2 text-sm text-ink-soft">Weight logged for {selectedDate}.</p>}
 
                 <button
                   onClick={() => router.push("/tracker")}
