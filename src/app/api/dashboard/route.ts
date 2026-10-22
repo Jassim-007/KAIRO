@@ -23,10 +23,21 @@ function serialize(doc: QueryDocumentSnapshot) {
 }
 
 export async function GET(request: Request) {
+  const timings: Record<string, number> = {};
+  let phaseStarted = performance.now();
+
   try {
     const user = await requireUser(request);
+    timings.auth = performance.now() - phaseStarted;
+
+    phaseStarted = performance.now();
     await enforceRateLimit(user.uid, "dashboard_overview_read", 120, 3600000);
+    timings.limit = performance.now() - phaseStarted;
+
+    phaseStarted = performance.now();
     const { root } = await getUserFitnessRoot(user.uid);
+    timings.account = performance.now() - phaseStarted;
+
     const date = new URL(request.url).searchParams.get("date");
     const selectedDate = date ?? new Date().toISOString().slice(0, 10);
     const parsed = /^\d{4}-\d{2}-\d{2}$/.test(selectedDate)
@@ -36,6 +47,7 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: "Choose a valid date." }, { status: 400 });
     }
 
+    phaseStarted = performance.now();
     const [nutritionSnap, waterSnap, dailyWorkouts, dailyWeights, goalsSnap, weightsSnap, workoutsSnap, planSnap] = await Promise.all([
       root.collection("nutrition").where("date", "==", selectedDate).get(),
       root.collection("water").where("date", "==", selectedDate).get(),
@@ -46,6 +58,7 @@ export async function GET(request: Request) {
       root.collection("workouts").where("subjectUid", "==", user.uid).orderBy("date", "desc").orderBy(FieldPath.documentId(), "desc").limit(100).get(),
       root.collection("fitnessPlans").doc(user.uid).get(),
     ]);
+    timings.data = performance.now() - phaseStarted;
 
     const nutritionDocs = nutritionSnap.docs.filter((doc) => doc.data().loggedBy === user.uid);
     const waterDocs = waterSnap.docs.filter((doc) => doc.data().loggedBy === user.uid);
@@ -63,7 +76,7 @@ export async function GET(request: Request) {
     }, { calories: 0, protein: 0, carbs: 0, fat: 0 });
     const userWaterMl = waterDocs.reduce((total, doc) => total + Number(doc.data().amountMl ?? 0), 0);
 
-    return NextResponse.json({
+    const response = NextResponse.json({
       date: selectedDate,
       totals: { ...userTotals, waterMl: userWaterMl, workouts: workouts.length },
       userTotals: { ...userTotals, waterMl: userWaterMl, workouts: workouts.length },
@@ -74,6 +87,13 @@ export async function GET(request: Request) {
       records: { weights: weightsSnap.docs.map(serialize), workouts: workoutsSnap.docs.map(serialize) },
       days: planSnap.exists ? planSnap.data()?.days ?? [] : dayNames.map((day) => ({ day, routines: [] })),
     });
+    response.headers.set(
+      "Server-Timing",
+      Object.entries(timings)
+        .map(([name, duration]) => `${name};dur=${duration.toFixed(1)}`)
+        .join(", "),
+    );
+    return response;
   } catch (error) {
     return workspaceErrorResponse(error);
   }

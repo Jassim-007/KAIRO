@@ -1,7 +1,7 @@
 import "server-only";
 
 import { adminDb } from "@/lib/server/firebase-admin";
-import { ensureAccountActive, WorkspaceError } from "@/lib/server/workspace-security";
+import { WorkspaceError } from "@/lib/server/workspace-security";
 
 export const MEAL_TYPES = [
   "Breakfast",
@@ -111,11 +111,45 @@ export async function getUserWorkspace(uid: string) {
 
 /** Shared members keep workspace storage; solo accounts use only their user document. */
 export async function getUserFitnessRoot(uid: string) {
-  await ensureAccountActive(uid);
-  const membershipSnapshot = await adminDb.collection("workspaceMembers").doc(uid).get();
+  // Resolve the account state and membership together. The old path read the
+  // membership once in ensureAccountActive, again here, and a third time in
+  // getUserWorkspace before starting the route's actual data reads.
+  const [membershipSnapshot, userSnapshot] = await Promise.all([
+    adminDb.collection("workspaceMembers").doc(uid).get(),
+    adminDb.collection("users").doc(uid).get(),
+  ]);
+
+  if (
+    membershipSnapshot.data()?.status === "deleting" ||
+    userSnapshot.data()?.accountStatus === "deleting"
+  ) {
+    throw new WorkspaceError(
+      "Your account is being deleted. Please try again later.",
+      410,
+    );
+  }
+
   if (!membershipSnapshot.exists) {
     return { root: adminDb.collection("users").doc(uid), workspaceId: null as string | null };
   }
-  const workspaceId = await getUserWorkspace(uid);
+
+  const membership = membershipSnapshot.data()!;
+  const workspaceId = membership.workspaceId;
+  if (typeof workspaceId !== "string" || !workspaceId) {
+    throw new WorkspaceError("Your workspace membership is invalid.", 403);
+  }
+
+  if (membership.status === "deleting") {
+    throw new WorkspaceError("Your account is being deleted. Please try again later.", 410);
+  }
+
+  const workspaceSnapshot = await adminDb.collection("workspaces").doc(workspaceId).get();
+  if (!workspaceSnapshot.exists) {
+    throw new WorkspaceError("Your workspace could not be found.", 404);
+  }
+  if (workspaceSnapshot.data()?.status === "deleting") {
+    throw new WorkspaceError("This workspace is being deleted. Please try again later.", 410);
+  }
+
   return { root: adminDb.collection("workspaces").doc(workspaceId), workspaceId };
 }
