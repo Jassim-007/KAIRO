@@ -7,11 +7,16 @@ import { parseFitnessEntry, fitnessKinds } from "@/lib/server/fitness";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 type Context = { params: Promise<{ kind: string; recordId: string }> };
-async function getRef(request: Request, context: Context) {
+async function getRef(
+  request: Request,
+  context: Context,
+  operation: "update" | "delete",
+) {
   const user = await requireUser(request);
   const { kind, recordId } = await context.params;
   if (!fitnessKinds.includes(kind as (typeof fitnessKinds)[number])) throw new WorkspaceError("Unknown fitness tracker.", 404);
   if (!recordId || recordId.length > 150 || recordId.includes("/")) throw new WorkspaceError("Invalid record ID.", 400);
+  await enforceRateLimit(user.uid, `fitness_${kind}_${operation}`, operation === "delete" ? 30 : 60, 3600000);
   const { root, workspaceId } = await getUserFitnessRoot(user.uid);
   const ref = root.collection(kind).doc(recordId);
   const snapshot = await ref.get();
@@ -24,8 +29,7 @@ async function getRef(request: Request, context: Context) {
 }
 export async function PATCH(request: Request, context: Context) {
   try {
-    const { user, kind, workspaceId, ref } = await getRef(request, context);
-    await enforceRateLimit(user.uid, `fitness_${kind}_update`, 60, 3600000);
+    const { user, kind, workspaceId, ref } = await getRef(request, context, "update");
     const body = await request.json().catch(() => null);
     const entry = await parseFitnessEntry(kind, body, user.uid, workspaceId);
     await ref.update({ ...entry, updatedAt: FieldValue.serverTimestamp() });
@@ -34,8 +38,7 @@ export async function PATCH(request: Request, context: Context) {
 }
 export async function DELETE(request: Request, context: Context) {
   try {
-    const { user, kind, ref } = await getRef(request, context);
-    await enforceRateLimit(user.uid, `fitness_${kind}_delete`, 30, 3600000);
+    const { ref } = await getRef(request, context, "delete");
     await ref.delete();
     return NextResponse.json({ success: true });
   } catch (error) { return workspaceErrorResponse(error); }

@@ -312,10 +312,7 @@ async function context(
   if (!kinds.includes(kind as Kind)) {
     throw new WorkspaceError("Unknown fitness tracker.", 404);
   }
-
-  const { root, workspaceId } = await getUserFitnessRoot(user.uid);
-
-  return { user, kind: kind as Kind, workspaceId, collection: root.collection(kind) };
+  return { user, kind: kind as Kind };
 }
 
 function buildListQuery(
@@ -347,7 +344,7 @@ export async function GET(
   { params }: { params: Promise<{ kind: string }> },
 ) {
   try {
-    const { user, kind, collection } = await context(
+    const { user, kind } = await context(
       request,
       params,
     );
@@ -358,6 +355,9 @@ export async function GET(
       120,
       3600000,
     );
+
+    const { root } = await getUserFitnessRoot(user.uid);
+    const collection = root.collection(kind);
 
     const url = new URL(request.url);
     const date = url.searchParams.get("date");
@@ -445,7 +445,7 @@ export async function POST(
   { params }: { params: Promise<{ kind: string }> },
 ) {
   try {
-    const { user, kind, workspaceId, collection } =
+    const { user, kind } =
       await context(request, params);
 
     await enforceRateLimit(
@@ -454,6 +454,9 @@ export async function POST(
       60,
       3600000,
     );
+
+    const { root, workspaceId } = await getUserFitnessRoot(user.uid);
+    const collection = root.collection(kind);
 
     const body = await request.json().catch(() => null);
 

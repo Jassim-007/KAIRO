@@ -37,14 +37,19 @@ function exerciseId(name: string) {
 }
 async function exerciseCollection(request: Request) {
   const user = await requireUser(request);
-  const { root } = await getUserFitnessRoot(user.uid);
-  return { user, collection: root.collection("exerciseLibraries").doc(user.uid).collection("exercises") };
+  return { user };
+}
+
+async function getExerciseCollection(uid: string) {
+  const { root } = await getUserFitnessRoot(uid);
+  return root.collection("exerciseLibraries").doc(uid).collection("exercises");
 }
 
 export async function GET(request: Request) {
   try {
-    const { user, collection } = await exerciseCollection(request);
+    const { user } = await exerciseCollection(request);
     await enforceRateLimit(user.uid, "exercise_library_read", 120, 3600000);
+    const collection = await getExerciseCollection(user.uid);
     const snapshot = await collection.orderBy("name").limit(1000).get();
     return NextResponse.json({ exercises: snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() })), truncated: snapshot.size === 1000 });
   } catch (error) { return workspaceErrorResponse(error); }
@@ -52,8 +57,9 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   try {
-    const { user, collection } = await exerciseCollection(request);
+    const { user } = await exerciseCollection(request);
     await enforceRateLimit(user.uid, "exercise_library_write", 30, 3600000);
+    const collection = await getExerciseCollection(user.uid);
     const body = await request.json().catch(() => null);
     const values = Array.isArray(body) ? body : body && typeof body === "object" ? (body as Record<string, unknown>).exercises : null;
     if (!Array.isArray(values) || values.length < 1 || values.length > 200) throw new WorkspaceError("Import between 1 and 200 exercises at a time.", 400);
@@ -68,8 +74,9 @@ export async function POST(request: Request) {
 
 export async function DELETE(request: Request) {
   try {
-    const { user, collection } = await exerciseCollection(request);
+    const { user } = await exerciseCollection(request);
     await enforceRateLimit(user.uid, "exercise_library_write", 30, 3600000);
+    const collection = await getExerciseCollection(user.uid);
     const id = new URL(request.url).searchParams.get("id") ?? "";
     if (!/^[a-z0-9-]{1,110}$/.test(id)) throw new WorkspaceError("Choose a valid exercise.", 400);
     const ref = collection.doc(id);
