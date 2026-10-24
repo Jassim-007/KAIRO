@@ -116,7 +116,7 @@ export default function TrackerPage() {
   }
   async function logWater(amount: number) {
     setSavingWater(true); setError(""); setMessage("");
-    try { await api("/api/fitness/water", "POST", { date: selectedDate, amountMl: amount }); await load(); setMessage(`${amount} ml of water logged.`); window.dispatchEvent(new CustomEvent("fitness-record-saved")); }
+    try { await api("/api/fitness/water", "POST", { date: selectedDate, amountMl: amount }); setMessage(`${amount} ml of water logged.`); window.dispatchEvent(new CustomEvent("fitness-record-saved")); }
     catch (reason) { setError(reason instanceof Error ? reason.message : "Could not log water."); }
     finally { setSavingWater(false); }
   }

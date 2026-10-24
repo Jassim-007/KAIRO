@@ -93,28 +93,33 @@ async function answerRecentSavedHistory(uid: string, endDate: string, question: 
   const start = new Date(end); start.setUTCDate(start.getUTCDate() - (days - 1));
   const startDate = start.toISOString().slice(0, 10);
   const { root } = await getUserFitnessRoot(uid);
-  const range = (name: string, ownerField: "loggedBy" | "subjectUid") => root.collection(name).where(ownerField, "==", uid).where("date", ">=", startDate).where("date", "<=", endDate).orderBy("date", "desc").limit(80).get();
-  const [nutrition, water, weight, workouts] = await Promise.all([range("nutrition", "loggedBy"), range("water", "loggedBy"), range("weight", "subjectUid"), range("workouts", "subjectUid")]);
   const wants = (name: string) => !/\b(food|meal|nutrition|calorie|protein)\b/i.test(question) && !/\b(water|hydration|drink)\b/i.test(question) && !/\b(weight|weigh|scale)\b/i.test(question) && !/\b(workout|exercise|training|lift|gym)\b/i.test(question)
     || name === "nutrition" && /\b(food|meal|nutrition|calorie|protein)\b/i.test(question)
     || name === "water" && /\b(water|hydration|drink)\b/i.test(question)
     || name === "weight" && /\b(weight|weigh|scale)\b/i.test(question)
     || name === "workouts" && /\b(workout|exercise|training|lift|gym)\b/i.test(question);
+  const range = (name: string, ownerField: "loggedBy" | "subjectUid") => root.collection(name).where(ownerField, "==", uid).where("date", ">=", startDate).where("date", "<=", endDate).orderBy("date", "desc").limit(80).get();
+  const [nutrition, water, weight, workouts] = await Promise.all([
+    wants("nutrition") ? range("nutrition", "loggedBy") : Promise.resolve(null),
+    wants("water") ? range("water", "loggedBy") : Promise.resolve(null),
+    wants("weight") ? range("weight", "subjectUid") : Promise.resolve(null),
+    wants("workouts") ? range("workouts", "subjectUid") : Promise.resolve(null),
+  ]);
   const parts: string[] = [];
   if (wants("nutrition")) {
-    const entries = nutrition.docs.filter((doc) => doc.data().loggedBy === uid).slice(0, 8).map((doc) => { const d = doc.data(); return `${d.date}: ${String(d.foodName || "Meal").slice(0, 80)}${Number.isFinite(d.calories) ? ` (${Math.round(d.calories)} kcal)` : ""}`; });
+    const entries = (nutrition?.docs ?? []).filter((doc) => doc.data().loggedBy === uid).slice(0, 8).map((doc) => { const d = doc.data(); return `${d.date}: ${String(d.foodName || "Meal").slice(0, 80)}${Number.isFinite(d.calories) ? ` (${Math.round(d.calories)} kcal)` : ""}`; });
     if (entries.length) parts.push("Meals: " + entries.join("; "));
   }
   if (wants("water")) {
-    const entries = water.docs.filter((doc) => doc.data().loggedBy === uid).slice(0, 8).map((doc) => `${doc.data().date}: ${doc.data().amountMl} ml`);
+    const entries = (water?.docs ?? []).filter((doc) => doc.data().loggedBy === uid).slice(0, 8).map((doc) => `${doc.data().date}: ${doc.data().amountMl} ml`);
     if (entries.length) parts.push("Water: " + entries.join("; "));
   }
   if (wants("weight")) {
-    const entries = weight.docs.filter((doc) => doc.data().subjectUid === uid).slice(0, 8).map((doc) => `${doc.data().date}: ${doc.data().weightKg} kg`);
+    const entries = (weight?.docs ?? []).filter((doc) => doc.data().subjectUid === uid).slice(0, 8).map((doc) => `${doc.data().date}: ${doc.data().weightKg} kg`);
     if (entries.length) parts.push("Weight: " + entries.join("; "));
   }
   if (wants("workouts")) {
-    const entries = workouts.docs.filter((doc) => doc.data().subjectUid === uid).slice(0, 8).map((doc) => { const d = doc.data(); const exercises = Array.isArray(d.exercises) ? d.exercises.slice(0, 8).map((x: Record<string, unknown>) => String(x.name || "")).filter(Boolean).join(", ") : ""; return `${d.date}: ${String(d.workoutType || "Workout")}${exercises ? ` (${exercises})` : ""}`; });
+    const entries = (workouts?.docs ?? []).filter((doc) => doc.data().subjectUid === uid).slice(0, 8).map((doc) => { const d = doc.data(); const exercises = Array.isArray(d.exercises) ? d.exercises.slice(0, 8).map((x: Record<string, unknown>) => String(x.name || "")).filter(Boolean).join(", ") : ""; return `${d.date}: ${String(d.workoutType || "Workout")}${exercises ? ` (${exercises})` : ""}`; });
     if (entries.length) parts.push("Workouts: " + entries.join("; "));
   }
   return parts.length ? `Your saved records from ${startDate} through ${endDate}: ${parts.join(". ")}.` : `I don't see matching saved records from ${startDate} through ${endDate}.`;
@@ -151,8 +156,11 @@ function validateDrafts(value: unknown) {
 }
 
 export async function POST(request: Request) {
+  const timings: Record<string, number> = {};
+  let phaseStarted = performance.now();
   try {
     const user = await requireUser(request);
+    timings.auth = performance.now() - phaseStarted;
     const body = await request.json().catch(() => null) as { text?: unknown; date?: unknown; history?: unknown } | null;
     if (typeof body?.text !== "string" || !body.text.trim()) throw new WorkspaceError("Tell me what happened and I’ll help sort it out.", 400);
     if (body.text.length > 80000) throw new WorkspaceError("That note is too big to send all at once. Try splitting it into a few chunks.", 413);
@@ -192,13 +200,20 @@ export async function POST(request: Request) {
       `Recent conversation for context (use it to understand follow-ups and answer questions; never repeat a log item already handled earlier in the chat): ${JSON.stringify(history)}`,
       `User text: ${body.text.trim()}`,
     ].join("\n");
-    try { await recordGeminiUsage(user.uid, model, undefined); } catch (usageError) { console.error("Gemini usage tracking failed", usageError); }
-    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`, {
+    const requestUsageStarted = performance.now();
+    const requestUsage = recordGeminiUsage(user.uid, model, undefined).catch((usageError) => {
+      console.error("Gemini usage tracking failed", usageError);
+    }).finally(() => {
+      timings.usage_request = performance.now() - requestUsageStarted;
+    });
+    phaseStarted = performance.now();
+    const [response] = await Promise.all([fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`, {
       method: "POST",
       headers: { "Content-Type": "application/json", "x-goog-api-key": apiKey },
       body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }], generationConfig: { responseMimeType: "application/json", temperature: 0.1 } }),
       signal: AbortSignal.timeout(25000),
-    });
+    }), requestUsage]);
+    timings.gemini = performance.now() - phaseStarted;
     if (!response.ok) {
       const providerError = await response.json().catch(() => null) as { error?: { message?: unknown; status?: unknown; details?: unknown } } | null;
       const providerMessage = typeof providerError?.error?.message === "string"
@@ -224,15 +239,21 @@ export async function POST(request: Request) {
       }
       throw new WorkspaceError("I couldn't reach my AI brain just now, so nothing was logged. Try again in a bit.", 502);
     }
+    phaseStarted = performance.now();
     const result = await response.json() as { candidates?: { content?: { parts?: { text?: string }[] } }[]; usageMetadata?: Record<string, unknown> };
+    const responseUsageStarted = performance.now();
     try { await recordGeminiUsage(user.uid, model, result.usageMetadata, false); } catch (usageError) { console.error("Gemini usage tracking failed", usageError); }
+    timings.usage_response = performance.now() - responseUsageStarted;
     const output = result.candidates?.[0]?.content?.parts?.map((part) => part.text ?? "").join("");
     if (!output) throw new WorkspaceError("I lost that reply somewhere—try sending it again?", 502);
     const parsed = JSON.parse(output) as { reply?: unknown; items?: unknown };
     const reply = typeof parsed.reply === "string" && parsed.reply.trim()
       ? parsed.reply.trim().slice(0, 1000)
       : "Got you!";
-    return NextResponse.json({ reply, items: validateDrafts(parsed) });
+    const resultResponse = NextResponse.json({ reply, items: validateDrafts(parsed) });
+    timings.parse = performance.now() - phaseStarted - timings.usage_response;
+    resultResponse.headers.set("Server-Timing", Object.entries(timings).map(([name, duration]) => `${name};dur=${duration.toFixed(1)}`).join(", "));
+    return resultResponse;
   } catch (error) {
     return workspaceErrorResponse(error);
   }
