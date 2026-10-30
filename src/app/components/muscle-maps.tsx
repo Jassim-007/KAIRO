@@ -7,6 +7,7 @@ import type { MuscleGroup, MuscleMapValues } from "@musclemap/core";
 
 type Props = { volumes: Record<string, number> };
 type Model = "MALE" | "FEMALE";
+type Side = "FRONT" | "BACK" | "BOTH";
 
 const muscleTargets: Array<{ match: string[]; groups: MuscleGroup[] }> = [
   { match: ["chest", "pectoral", "pec"], groups: ["CHEST"] },
@@ -69,6 +70,7 @@ const labels: Partial<Record<MuscleGroup, string>> = {
 
 export default function MuscleMaps({ volumes }: Props) {
   const [model, setModel] = useState<Model>("MALE");
+  const [side, setSide] = useState<Side>("BOTH");
 
   const values = useMemo<MuscleMapValues>(() => {
     const sets = new Map<MuscleGroup, number>();
@@ -119,7 +121,15 @@ export default function MuscleMaps({ volumes }: Props) {
         </div>
 
         <div className="flex flex-wrap items-center gap-3">
-          <span className="text-xs text-ink-mute">{total} tagged sets</span>
+          <div className="flex gap-1 rounded-lg border border-line bg-field p-1" aria-label="Muscle map side">
+            {(["FRONT", "BACK", "BOTH"] as Side[]).map((option) => (
+              <button key={option} type="button" aria-pressed={side === option} onClick={() => setSide(option)}
+                className={`rounded-md px-2 py-1.5 text-[10px] font-medium ${side === option ? "bg-butter text-butter-ink" : "text-ink-soft"}`}>
+                {option === "BOTH" ? "Both" : option === "FRONT" ? "Front" : "Back"}
+              </button>
+            ))}
+          </div>
+          <span className="text-xs text-ink-mute">{total} logged sets</span>
 
           <div
             className="flex shrink-0 rounded-lg border border-line bg-field p-1"
@@ -151,7 +161,7 @@ export default function MuscleMaps({ volumes }: Props) {
               <MuscleMap
                 values={values}
                 sex={model}
-                view="BOTH"
+                view={side}
                 colorModel="FREQUENCY"
                 monochromeColor="#22c55e"
                 monochromeBaseColor="#3a3e39"
@@ -170,7 +180,7 @@ export default function MuscleMaps({ volumes }: Props) {
               className="h-2.5 w-2.5 shrink-0 rounded-full bg-green-500"
               aria-hidden="true"
             />
-            <span>Green intensity reflects sets logged in this range</span>
+            <span>Green intensity reflects completed sets in this date range</span>
           </div>
 
           <p className="pb-3 text-center text-[10px] text-ink-mute sm:hidden">
@@ -181,7 +191,7 @@ export default function MuscleMaps({ volumes }: Props) {
         <div className="mt-4 rounded-xl border border-dashed border-line px-5 py-8 text-center">
           <p className="font-medium text-ink">Your muscle map is ready</p>
           <p className="mt-1 text-sm text-ink-mute">
-            Log exercises with muscle tags to light up your training map.
+            Completed workouts with recognizable muscle tags appear here. This is logged training volume, not muscle growth or recovery.
           </p>
         </div>
       )}

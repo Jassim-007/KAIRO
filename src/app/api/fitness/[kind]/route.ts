@@ -287,6 +287,13 @@ async function parseEntry(
     workoutType,
     exercises,
     notes,
+    ...(kind === "workouts" && Array.isArray(data.skippedExercises)
+      ? { skippedExercises: data.skippedExercises.filter((name: unknown): name is string => typeof name === "string").slice(0, 30).map((name: string) => name.slice(0, 80)) }
+      : {}),
+    ...(kind === "workouts" && Array.isArray(data.substitutions)
+      ? { substitutions: data.substitutions.slice(0, 30).flatMap((item: unknown) => item && typeof item === "object" && typeof (item as Record<string, unknown>).from === "string" && typeof (item as Record<string, unknown>).to === "string" ? [{ from: String((item as Record<string, unknown>).from).slice(0, 80), to: String((item as Record<string, unknown>).to).slice(0, 80) }] : []) }
+      : {}),
+
     ...(typeof data.durationMinutes === "number" &&
     Number.isFinite(data.durationMinutes)
       ? {

@@ -7,6 +7,7 @@ import { auth } from "@/lib/firebase";
 import { Ring, PlantScene } from "@/app/components/illustrations";
 import { Icon, type IconName } from "@/app/components/icons";
 import { inferExerciseMuscle } from "@/lib/muscles";
+import { resolveDateRoutines, workoutStatus } from "@/lib/workout-schedule";
 
 type Summary = {
   date: string;
@@ -78,6 +79,9 @@ export default function DashboardPage() {
   const [weights, setWeights] = useState<Weight[]>([]);
   const [workouts, setWorkouts] = useState<Workout[]>([]);
   const [plan, setPlan] = useState<Day[]>([]);
+  const [datePlan, setDatePlan] = useState<Routine[] | null>(null);
+  const [moveToDate, setMoveToDate] = useState(key(new Date()));
+  const [mutatingPlan, setMutatingPlan] = useState(false);
   const [selectedDate, setSelectedDate] = useState(key(new Date()));
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
@@ -144,6 +148,7 @@ export default function DashboardPage() {
       );
       setWorkouts(overview.records.workouts || []);
       setPlan(overview.days || []);
+      setDatePlan(Array.isArray(overview.datePlan) ? overview.datePlan : null);
       setError("");
     } catch (caught) {
       setError(
@@ -164,15 +169,17 @@ export default function DashboardPage() {
   useEffect(() => {
     const refresh = () => void load();
     window.addEventListener("fitness-record-saved", refresh);
+    window.addEventListener("fitness-plan-updated", refresh);
 
-    return () =>
+    return () => {
       window.removeEventListener("fitness-record-saved", refresh);
+      window.removeEventListener("fitness-plan-updated", refresh);
+    };
   }, [load]);
 
   const totals = summary?.userTotals;
   const chosenDay = weekNames[indexFor(selectedDate)];
-  const routines =
-    plan.find((day) => day.day === chosenDay)?.routines || [];
+  const routines = resolveDateRoutines(datePlan, plan.find((day) => day.day === chosenDay)?.routines ?? []);
   const selectedDayWorkouts = workouts.filter((workout) => workout.date === selectedDate);
   const loggedRoutineIds = new Set(
     selectedDayWorkouts
@@ -180,6 +187,12 @@ export default function DashboardPage() {
       .map((workout) => workout.planRoutineId)
       .filter((id): id is string => Boolean(id)),
   );
+  const hasInProgressSession = (routine: Routine) => {
+    try {
+      const raw = localStorage.getItem(`kairo_session_${user?.uid}_${routine.id}`);
+      return Boolean(raw && (JSON.parse(raw) as { scheduledDate?: string }).scheduledDate === selectedDate);
+    } catch { return false; }
+  };
   const routinesToShow = routines.filter((routine) =>
     !loggedRoutineIds.has(routine.id) &&
     !selectedDayWorkouts.some((workout) =>
@@ -277,41 +290,29 @@ export default function DashboardPage() {
     }
   }
 
-  async function moveRoutine(routine: Routine) {
-    const destination = indexFor(selectedDate);
-
-    const nextPlan = weekNames.map((day) => ({
-      day,
-      routines: (plan.find((entry) => entry.day === day)?.routines || [])
-        .filter((entry) => entry.id !== routine.id),
-    }));
-
-    const exists = nextPlan[destination].routines.some(
-      (entry) => entry.id === routine.id,
-    );
-
-    if (!exists) {
-      nextPlan[destination].routines = [
-        ...nextPlan[destination].routines,
-        routine,
-      ];
+  async function updateDateRoutine(routine: Routine, action: "remove" | "move") {
+    if (mutatingPlan) return;
+    if (action === "remove" && !window.confirm(
+      "Remove " + routine.name + " from " + selectedDate + " only? Your weekly routine and workout history will stay unchanged.",
+    )) return;
+    if (action === "move" && (!moveToDate || moveToDate === selectedDate)) {
+      setError("Choose a different date to move this routine to.");
+      return;
     }
-
+    setMutatingPlan(true);
+    setError("");
     try {
-      await tokenRequest("/api/fitness/plans", {
-        method: "PUT",
+      await tokenRequest("/api/fitness/plans/date", {
+        method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ days: nextPlan }),
+        body: JSON.stringify({ date: selectedDate, routineId: routine.id, action, ...(action === "move" ? { toDate: moveToDate } : {}) }),
       });
-
-      setPlan(nextPlan);
-      setNotice(`Scheduled ${routine.name} for ${chosenDay}.`);
+      setNotice(action === "move" ? "Moved " + routine.name + " to " + moveToDate + "." : "Removed " + routine.name + " from " + selectedDate + ".");
+      window.dispatchEvent(new Event("fitness-plan-updated"));
     } catch (caught) {
-      setError(
-        caught instanceof Error
-          ? caught.message
-          : "Could not reschedule routine.",
-      );
+      setError(caught instanceof Error ? caught.message : "Could not update this date’s plan.");
+    } finally {
+      setMutatingPlan(false);
     }
   }
 
@@ -634,7 +635,7 @@ export default function DashboardPage() {
                         : `${chosenDay} plan`}
                     </h2>
                     <p className="mt-1 text-xs text-ink-mute">
-                      Choose a routine to begin or move it to this day
+                      {datePlan ? "Date-specific plan" : "From your recurring weekly plan"} · scheduled workouts are separate from completed history
                     </p>
                   </div>
                   <button
@@ -655,17 +656,14 @@ export default function DashboardPage() {
                         <div>
                           <p className="font-semibold">{routine.name}</p>
                           <p className="mt-1 text-xs text-ink-mute">
-                            {routine.exercises.length} exercises ·{" "}
+                            <span className="mr-1 rounded-full bg-warn/10 px-2 py-0.5 text-xs text-warn">{workoutStatus({ scheduled: true, inProgress: hasInProgressSession(routine) })}</span> · {routine.exercises.length} exercises ·{" "}
                             {routine.workoutType}
                           </p>
                         </div>
-                        <div className="flex gap-2">
-                          <button
-                            onClick={() => void moveRoutine(routine)}
-                            className="rounded-xl border border-line px-3 py-2 text-xs"
-                          >
-                            Reschedule here
-                          </button>
+                        <div className="flex flex-wrap gap-2">
+                          <label className="text-xs text-ink-mute">Move to date<input aria-label={`Move ${routine.name} to date`} type="date" value={moveToDate} onChange={(event) => setMoveToDate(event.target.value)} className="mt-1 block rounded-xl border border-line bg-field px-2 py-2 text-xs text-ink" /></label>
+                          <button disabled={mutatingPlan} onClick={() => void updateDateRoutine(routine, "move")} className="self-end rounded-xl border border-line px-3 py-2 text-xs disabled:opacity-50">Move</button>
+                          <button disabled={mutatingPlan} onClick={() => void updateDateRoutine(routine, "remove")} className="self-end rounded-xl border border-line px-3 py-2 text-xs disabled:opacity-50">Remove from date</button>
                           <button
                             onClick={() =>
                               router.push(
@@ -674,7 +672,7 @@ export default function DashboardPage() {
                             }
                             className="rounded-xl bg-butter px-4 py-2 text-sm font-bold text-butter-ink"
                           >
-                            Start
+                            {hasInProgressSession(routine) ? "Resume" : "Start"}
                           </button>
                         </div>
                       </div>
@@ -682,7 +680,7 @@ export default function DashboardPage() {
                   </div>
                 ) : selectedDayWorkouts.length > 0 ? (
                   <p className="mt-4 rounded-2xl bg-sunken p-5 text-sm text-ink-soft">
-                    Today’s planned routine is complete. You can still log another workout from Quick start.
+                    No planned routines remain for this date. Completed workouts are listed below. You can still log another workout from Quick start.
                   </p>
                 ) : (
                   <div className="mt-4 rounded-2xl bg-sunken p-5 text-sm text-ink-soft">
@@ -715,7 +713,7 @@ export default function DashboardPage() {
                           .filter((muscle): muscle is string => Boolean(muscle)))];
                         return (
                           <div key={workout.id} className="rounded-2xl bg-sunken p-4">
-                            <p className="font-medium">{workout.notes || workout.workoutType || "Workout"}</p>
+                            <p className="font-medium">{workout.notes || workout.workoutType || "Workout"} <span className="ml-1 rounded-full bg-periwinkle/10 px-2 py-0.5 text-xs text-periwinkle">Completed</span></p>
                             {workout.exercises?.map((item, index) => (
                               <p key={`${workout.id}-${index}`} className="mt-1 text-xs text-ink-soft">
                                 {item.name} · {item.sets} sets × {item.reps} reps

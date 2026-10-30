@@ -1,32 +1,36 @@
 "use client";
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { onAuthStateChanged, type User } from "firebase/auth";
+
+import { useEffect, useState } from "react";
+import { onAuthStateChanged } from "firebase/auth";
 import { useRouter } from "next/navigation";
 import { auth } from "@/lib/firebase";
 import NaturalLog from "@/app/components/natural-log";
-type Exercise = { name: string; sets: number; reps: number; weightKg: number; muscle: string; equipment: string };
-type Routine = { id: string; name: string; workoutType: string; exercises: Exercise[] };
-type Day = { day: string; routines: Routine[] };
-const DAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
-const blank = (): Day[] => DAYS.map((day) => ({ day, routines: [] }));
-const sample: Exercise[] = [{ name: "Barbell Bench Press", sets: 3, reps: 8, weightKg: 0, muscle: "Chest", equipment: "Barbell" }, { name: "Seated Cable Row", sets: 3, reps: 10, weightKg: 0, muscle: "Back", equipment: "Cable" }, { name: "Goblet Squat", sets: 3, reps: 10, weightKg: 0, muscle: "Quads", equipment: "Dumbbell" }];
+
 export default function PlanPage() {
- const router = useRouter(); const [user,setUser]=useState<User|null>(null); const [days,setDays]=useState<Day[]>(blank()); const [loading,setLoading]=useState(true); const [saving,setSaving]=useState(false); const [error,setError]=useState(""); const [notice,setNotice]=useState(""); const [coach,setCoach]=useState(false);
- const [editor,setEditor]=useState<{kind:"routine"|"exercise";day:number;routineId?:string}|null>(null); const [draftName,setDraftName]=useState(""); const [draftMuscle,setDraftMuscle]=useState("Full body"); const [draftEquipment,setDraftEquipment]=useState("Bodyweight");
- useEffect(()=>onAuthStateChanged(auth,(u)=>{setUser(u);if(!u)router.replace("/login")}),[router]);
- const request=useCallback(async(path:string,init?:RequestInit)=>{if(!user)throw new Error("Please sign in again.");const token=await user.getIdToken();const res=await fetch(path,{...init,headers:{Authorization:`Bearer ${token}`,"Content-Type":"application/json",...(init?.headers||{})},cache:"no-store"});const data=await res.json();if(!res.ok)throw new Error(data.error||"Request failed.");return data},[user]);
- useEffect(()=>{if(!user)return;void request("/api/fitness/plans").then((data)=>setDays(data.days?.length===7?data.days:blank())).catch(e=>setError(e.message)).finally(()=>setLoading(false))},[user,request]);
- const total=useMemo(()=>days.reduce((n,d)=>n+d.routines.length,0),[days]);
- async function persist(next:Day[]){setDays(next);setSaving(true);setError("");try{await request("/api/fitness/plans",{method:"PUT",body:JSON.stringify({days:next})});setNotice("Your weekly plan is saved.");window.setTimeout(()=>setNotice(""),2500)}catch(e){setError(e instanceof Error?e.message:"Could not save your plan.")}finally{setSaving(false)}}
- function addRoutine(index:number){setDraftName(index===0?"Push Day":index===2?"Pull Day":index===4?"Leg Day":"Full Body");setEditor({kind:"routine",day:index})}
- function removeRoutine(dayIndex:number,id:string){void persist(days.map((d,i)=>i===dayIndex?{...d,routines:d.routines.filter(r=>r.id!==id)}:d))} function addMovement(dayIndex:number,routineId:string){setDraftName("");setDraftMuscle("Full body");setDraftEquipment("Bodyweight");setEditor({kind:"exercise",day:dayIndex,routineId})}
- function saveEditor(){if(!editor||!draftName.trim())return;const next=days.map((d,i)=>{if(i!==editor.day)return d;if(editor.kind==="routine"){const name=draftName.trim().slice(0,60);return {...d,routines:[...d.routines,{id:crypto.randomUUID(),name,workoutType:/push/i.test(name)?"Push":/pull/i.test(name)?"Pull":/leg/i.test(name)?"Legs":"Custom",exercises:sample}]}}return {...d,routines:d.routines.map(r=>r.id===editor.routineId?{...r,exercises:[...r.exercises,{name:draftName.trim().slice(0,80),sets:3,reps:10,weightKg:0,muscle:draftMuscle.trim().slice(0,40)||"Full body",equipment:draftEquipment.trim().slice(0,40)||"Bodyweight"}]}:r)}});setEditor(null);void persist(next)}
- function removeMovement(dayIndex:number,routineId:string,movementIndex:number){void persist(days.map((d,i)=>i===dayIndex?{...d,routines:d.routines.map(r=>r.id===routineId?{...r,exercises:r.exercises.filter((_,j)=>j!==movementIndex)}:r)}:d))}
- if(!user||loading)return <main className="min-h-screen p-8 text-ink-soft">Loading your plan…</main>;
- return <main className="min-h-screen text-ink"><header className="px-4 pb-3 pt-[max(1rem,env(safe-area-inset-top))] sm:px-8"><p className="text-xs text-ink-mute">KAIRO ·YOUR MOMENT.YOUR MOMENTUM</p></header><div className="mx-auto max-w-5xl space-y-6 px-4 py-7 sm:px-8 sm:py-10"><section className="flex flex-wrap items-end justify-between gap-4"><div><p className="text-xs font-semibold uppercase tracking-[.2em] text-periwinkle">Build a rhythm that fits</p><h1 className="mt-2 text-4xl font-bold">Your weekly plan</h1><p className="mt-2 text-ink-soft">{total} routines across the week · saved to your account</p></div><span aria-live="polite" className="text-sm text-periwinkle">{saving?"Saving…":notice}</span></section>
- <button onClick={()=>setCoach(!coach)} className="w-full rounded-3xl border border-periwinkle/25 bg-gradient-to-r from-lavender/60 to-surface p-5 text-left hover:border-periwinkle/50"><span className="text-xs font-semibold uppercase tracking-widest text-periwinkle">✦ Coach</span><span className="mt-2 block text-xl font-semibold">Plan design and reviews, from your own training</span><span className="mt-1 block text-sm text-ink-soft">Ask for a split, an equipment-friendly swap, or a review of your last sessions.</span></button>{coach&&<NaturalLog inline initialOpen workoutCoach/>}
- {error&&<p role="alert" className="rounded-2xl border border-warn/30 p-3 text-sm text-warn">{error}</p>}
- <section className="grid gap-3 md:grid-cols-2">{days.map((day,index)=><article key={day.day} className="rounded-3xl border border-line card p-5"><div className="flex items-center justify-between"><h2 className="text-lg font-semibold">{day.day}</h2><span className="text-xs text-ink-mute">{day.routines.length?`${day.routines.length} routine${day.routines.length>1?"s":""}`:"Rest / flexible"}</span></div>{day.routines.length===0?<p className="mt-4 rounded-2xl bg-sunken p-4 text-sm text-ink-mute">A recovery day is part of a good plan.</p>:<div className="mt-3 space-y-3">{day.routines.map((routine)=><div key={routine.id} className="rounded-2xl bg-sunken p-4"><div className="flex items-start justify-between gap-2"><div><p className="font-semibold">{routine.name}</p><p className="mt-1 text-xs text-ink-mute">{routine.exercises.length} exercises · {routine.workoutType}</p></div><button aria-label={`Remove ${routine.name}`} onClick={()=>removeRoutine(index,routine.id)} className="rounded-xl px-2 py-1 text-ink-mute hover:bg-lavender/55">×</button></div><div className="mt-3 flex flex-wrap gap-2">{routine.exercises.map((e,i)=><span key={i} className="inline-flex items-center gap-2 rounded-full bg-sunken px-3 py-1 text-xs text-ink-soft">{e.name}<button aria-label={"Remove "+e.name} onClick={()=>removeMovement(index,routine.id,i)} className="text-ink-mute hover:text-ink">×</button></span>)}</div><button onClick={()=>addMovement(index,routine.id)} className="mt-3 text-xs font-semibold text-periwinkle">＋ Add movement</button><button onClick={()=>router.push(`/workout?day=${encodeURIComponent(day.day)}&routine=${encodeURIComponent(routine.id)}`)} className="mt-4 w-full rounded-xl bg-butter px-3 py-2 text-sm font-bold text-butter-ink">Start {routine.name}</button></div>)}</div>}<button onClick={()=>addRoutine(index)} className="mt-4 rounded-xl px-2 py-2 text-sm font-semibold text-periwinkle hover:bg-periwinkle/5">＋ Add routine</button></article>)}</section>
- </div>{editor&&<div className="fixed inset-0 z-[70] flex items-end justify-center bg-scrim backdrop-blur-sm sm:items-center sm:p-4" onMouseDown={e=>{if(e.target===e.currentTarget)setEditor(null)}}><section role="dialog" aria-modal="true" aria-labelledby="editor-title" className="card sheet-in w-full max-w-lg rounded-t-[2rem] p-6 pb-[max(1.5rem,env(safe-area-inset-bottom))] shadow-lift sm:rounded-[2rem]" style={{backgroundColor:"var(--c-surface-solid)"}}><p className="text-xs font-semibold uppercase tracking-widest text-periwinkle">Training studio</p><h2 id="editor-title" className="mt-2 text-xl font-bold">{editor.kind==="routine"?"Create a routine":"Add an exercise"}</h2><label className="mt-5 block text-sm text-ink-soft">{editor.kind==="routine"?"Routine name":"Exercise name"}<input autoFocus maxLength={80} value={draftName} onChange={e=>setDraftName(e.target.value)} placeholder={editor.kind==="routine"?"e.g. Upper body strength":"e.g. Dumbbell row"} className="mt-2 w-full px-3 py-3" onKeyDown={e=>{if(e.key==="Enter")saveEditor()}}/></label>{editor.kind==="exercise"&&<div className="mt-4 grid gap-4 sm:grid-cols-2"><label className="text-sm text-ink-soft">Primary muscle<input value={draftMuscle} onChange={e=>setDraftMuscle(e.target.value)} className="mt-2 w-full px-3 py-3"/></label><label className="text-sm text-ink-soft">Equipment<input value={draftEquipment} onChange={e=>setDraftEquipment(e.target.value)} className="mt-2 w-full px-3 py-3"/></label></div>}<div className="mt-6 flex justify-end gap-3"><button onClick={()=>setEditor(null)} className="rounded-2xl border border-line-strong px-4 py-2.5 text-sm">Cancel</button><button disabled={!draftName.trim()} onClick={saveEditor} className="rounded-2xl bg-butter px-5 py-2.5 text-sm font-bold text-butter-ink disabled:opacity-50">{editor.kind==="routine"?"Create routine":"Add exercise"}</button></div></section></div>}</main>;
+  const router = useRouter();
+  const [ready, setReady] = useState(false);
+
+  useEffect(() => onAuthStateChanged(auth, (user) => {
+    setReady(true);
+    if (!user) router.replace("/login");
+  }), [router]);
+
+  if (!ready) return <main className="min-h-screen p-8 text-ink-soft">Loading your workout coach…</main>;
+
+  return (
+    <main className="min-h-screen text-ink">
+      <header className="px-4 pb-3 pt-[max(1rem,env(safe-area-inset-top))] sm:px-8">
+        <p className="text-xs text-ink-mute">KAIRO · YOUR MOMENT. YOUR MOMENTUM</p>
+      </header>
+      <div className="mx-auto max-w-3xl px-4 py-5 sm:px-8 sm:py-8">
+        <section className="mb-5">
+          <p className="text-xs font-semibold uppercase tracking-[.2em] text-periwinkle">Training studio</p>
+          <h1 className="mt-2 text-3xl font-bold sm:text-4xl">Build your workout</h1>
+          <p className="mt-2 text-sm text-ink-soft">Talk it through with your coach. Your workout card will appear in the chat, ready to add and start.</p>
+        </section>
+        <NaturalLog inline initialOpen workoutCoach />
+      </div>
+    </main>
+  );
 }
 

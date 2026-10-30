@@ -48,7 +48,7 @@ export async function GET(request: Request) {
     }
 
     phaseStarted = performance.now();
-    const [nutritionSnap, waterSnap, dailyWorkouts, dailyWeights, goalsSnap, weightsSnap, workoutsSnap, planSnap] = await Promise.all([
+    const [nutritionSnap, waterSnap, dailyWorkouts, dailyWeights, goalsSnap, weightsSnap, workoutsSnap, planSnap, datePlanSnap] = await Promise.all([
       root.collection("nutrition").where("date", "==", selectedDate).get(),
       root.collection("water").where("date", "==", selectedDate).get(),
       root.collection("workouts").where("date", "==", selectedDate).where("subjectUid", "==", user.uid).get(),
@@ -57,6 +57,7 @@ export async function GET(request: Request) {
       root.collection("weight").where("subjectUid", "==", user.uid).orderBy("date", "desc").orderBy(FieldPath.documentId(), "desc").limit(100).get(),
       root.collection("workouts").where("subjectUid", "==", user.uid).orderBy("date", "desc").orderBy(FieldPath.documentId(), "desc").limit(100).get(),
       root.collection("fitnessPlans").doc(user.uid).get(),
+      root.collection("fitnessPlanDates").doc(`${user.uid}_${selectedDate}`).get(),
     ]);
     timings.data = performance.now() - phaseStarted;
 
@@ -86,6 +87,7 @@ export async function GET(request: Request) {
       goals: goalsSnap.exists ? goalsSnap.data() : null,
       records: { weights: weightsSnap.docs.map(serialize), workouts: workoutsSnap.docs.map(serialize) },
       days: planSnap.exists ? planSnap.data()?.days ?? [] : dayNames.map((day) => ({ day, routines: [] })),
+      datePlan: datePlanSnap.exists ? datePlanSnap.data()?.routines ?? [] : null,
     });
     response.headers.set(
       "Server-Timing",

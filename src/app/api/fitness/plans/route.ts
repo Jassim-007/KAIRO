@@ -27,7 +27,7 @@ function validatePlan(value: unknown) {
         if (!exerciseName || exerciseName.length > 80 || !Number.isInteger(sets) || sets < 1 || sets > 12 || !Number.isInteger(reps) || reps < 1 || reps > 100 || !Number.isFinite(weightKg) || weightKg < 0 || weightKg > 1000) throw new WorkspaceError("Check the exercise name, sets, reps, and weight.", 400);
         return { name: exerciseName, sets, reps, weightKg, muscle: typeof exercise.muscle === "string" ? exercise.muscle.slice(0, 40) : "Full body", equipment: typeof exercise.equipment === "string" ? exercise.equipment.slice(0, 40) : "Bodyweight" };
       });
-      return { id: typeof routine.id === "string" ? routine.id.slice(0, 80) : crypto.randomUUID(), name, workoutType: typeof routine.workoutType === "string" ? routine.workoutType.slice(0, 40) : "Custom", exercises };
+      return { id: typeof routine.id === "string" ? routine.id.slice(0, 80) : crypto.randomUUID(), name, workoutType: typeof routine.workoutType === "string" ? routine.workoutType.slice(0, 40) : "Custom", ...(typeof routine.notes === "string" ? { notes: routine.notes.slice(0, 700) } : {}), exercises };
     });
     return { day: dayNames[index], routines };
   });
@@ -37,7 +37,16 @@ export async function GET(request: Request) {
     const user = await requireUser(request); await enforceRateLimit(user.uid, "fitness_plan_read", 120, 3600000);
     const { root } = await getUserFitnessRoot(user.uid);
     const snap = await root.collection("fitnessPlans").doc(user.uid).get();
-    return NextResponse.json({ days: snap.exists ? snap.data()?.days ?? [] : dayNames.map((day) => ({ day, routines: [] })), updatedAt: snap.data()?.updatedAt?.toDate?.()?.toISOString?.() ?? null });
+    const date = new URL(request.url).searchParams.get("date");
+    let dateRoutines: unknown = null;
+    if (date && /^\d{4}-\d{2}-\d{2}$/.test(date)) {
+      const parsed = new Date(`${date}T00:00:00.000Z`);
+      if (!Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === date) {
+        const dateSnap = await root.collection("fitnessPlanDates").doc(`${user.uid}_${date}`).get();
+        if (dateSnap.exists && Array.isArray(dateSnap.data()?.routines)) dateRoutines = dateSnap.data()!.routines;
+      }
+    }
+    return NextResponse.json({ days: snap.exists ? snap.data()?.days ?? [] : dayNames.map((day) => ({ day, routines: [] })), dateRoutines, updatedAt: snap.data()?.updatedAt?.toDate?.()?.toISOString?.() ?? null });
   } catch (error) { return workspaceErrorResponse(error); }
 }
 export async function PUT(request: Request) {

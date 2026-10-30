@@ -7,7 +7,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "test:account-deletion": "node --test scripts/test-account-deletion-policy.mjs"
+    "test:account-deletion": "node --test scripts/test-account-deletion-policy.mjs",
+    "test:workout-schedule": "node --experimental-strip-types --test scripts/test-workout-schedule.mjs"
   },
   "dependencies": {
     "@musclemap/react": "^1.1.0",

@@ -13,12 +13,20 @@ import {
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-function chatRef(uid: string) {
+function chatRef(uid: string, scope: "tracker" | "workout") {
   return adminDb
     .collection("users")
     .doc(uid)
     .collection("fitnessMemory")
-    .doc("chat");
+    // Keep the existing tracker document intact. Workout coaching gets its
+    // own history so older nutrition conversations remain available there.
+    .doc(scope === "workout" ? "workout-chat" : "chat");
+}
+
+function memoryScope(request: Request): "tracker" | "workout" {
+  return new URL(request.url).searchParams.get("scope") === "workout"
+    ? "workout"
+    : "tracker";
 }
 
 function savedPlan(value: unknown) {
@@ -37,7 +45,7 @@ function savedPlan(value: unknown) {
     return undefined;
   }
 
-  const exercises = plan.exercises.slice(0, 6).flatMap((item) => {
+  const exercises = plan.exercises.slice(0, 8).flatMap((item) => {
     if (!item || typeof item !== "object" || Array.isArray(item)) {
       return [];
     }
@@ -62,6 +70,9 @@ function savedPlan(value: unknown) {
 
     return [
       {
+        ...(typeof exercise.muscle === "string" ? { muscle: exercise.muscle.slice(0, 40) } : {}),
+        ...(typeof exercise.equipment === "string" ? { equipment: exercise.equipment.slice(0, 40) } : {}),
+        ...(Array.isArray(exercise.alternatives) ? { alternatives: exercise.alternatives.filter((value): value is string => typeof value === "string").slice(0, 2).map((value) => value.slice(0, 80)) } : {}),
         name: exercise.name.slice(0, 80),
         sets:
           typeof exercise.sets === "number" &&
@@ -84,6 +95,8 @@ function savedPlan(value: unknown) {
 
   return exercises.length
     ? {
+        ...(typeof plan.id === "string" && /^[\w-]{8,80}$/.test(plan.id) ? { id: plan.id } : {}),
+        ...(typeof plan.plannedFor === "string" && /^\d{4}-\d{2}-\d{2}$/.test(plan.plannedFor) ? { plannedFor: plan.plannedFor } : {}),
         focus: plan.focus.slice(0, 100),
         warmup: plan.warmup.slice(0, 300),
         exercises,
@@ -104,7 +117,7 @@ export async function GET(request: Request) {
       3600000,
     );
 
-    const snap = await chatRef(user.uid).get();
+    const snap = await chatRef(user.uid, memoryScope(request)).get();
     const messages =
       snap.exists && Array.isArray(snap.data()?.messages)
         ? snap.data()!.messages.slice(-80)
@@ -175,7 +188,7 @@ export async function POST(request: Request) {
       };
     });
 
-    const ref = chatRef(user.uid);
+    const ref = chatRef(user.uid, memoryScope(request));
 
     await adminDb.runTransaction(async (tx) => {
       const snap = await tx.get(ref);

@@ -6,6 +6,7 @@ import { onAuthStateChanged, type User } from "firebase/auth";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
 import { auth } from "@/lib/firebase";
+import { resolveDateRoutines } from "@/lib/workout-schedule";
 import { imageForExercise } from "@/app/exercises/catalog";
 
 type Exercise = {
@@ -150,9 +151,13 @@ export default function WorkoutPage() {
   const [exercise, setExercise] = useState(0);
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
+  const [sessionReview, setSessionReview] = useState("");
+  const [reviewUnavailable, setReviewUnavailable] = useState(false);
   const [finished, setFinished] = useState(false);
   const [addingExercise, setAddingExercise] = useState(false);
   const [newExercise, setNewExercise] = useState("");
+  const [replaceExerciseIndex, setReplaceExerciseIndex] = useState<number | null>(null);
+  const [substitutions, setSubstitutions] = useState<{ from: string; to: string }[]>([]);
   const [scheduledDate, setScheduledDate] = useState(todayKey());
   const [planDay, setPlanDay] = useState("");
   const [restoredNotice, setRestoredNotice] = useState(false);
@@ -179,7 +184,8 @@ export default function WorkoutPage() {
       try {
         const token = await user.getIdToken();
 
-        const response = await fetch("/api/fitness/plans", {
+        const requestedDate = new URLSearchParams(window.location.search).get("date");
+        const response = await fetch("/api/fitness/plans" + (requestedDate ? "?date=" + encodeURIComponent(requestedDate) : ""), {
           headers: {
             Authorization: `Bearer ${token}`,
           },
@@ -203,11 +209,11 @@ export default function WorkoutPage() {
         const routineId = params.get("routine");
         const days = data.days as Day[];
 
-        const selected =
-          days
-            .find((item) => item.day === dayParam)
-            ?.routines.find((item) => item.id === routineId) ||
-          days.find((item) => item.day === dayParam)?.routines[0];
+        const dateRoutines = Array.isArray(data.dateRoutines) ? data.dateRoutines as Routine[] : null;
+        const availableRoutines = resolveDateRoutines(dateRoutines, days.find((item) => item.day === dayParam)?.routines ?? []);
+        const selected = routineId
+          ? availableRoutines.find((item) => item.id === routineId)
+          : availableRoutines[0];
 
         const fallback: Routine = {
           id: "quick-start",
@@ -356,21 +362,18 @@ export default function WorkoutPage() {
       equipment: "Custom",
     };
 
-    setRoutine((previous) =>
-      previous
-        ? {
-            ...previous,
-            exercises: [...previous.exercises, customExercise],
-          }
-        : previous,
-    );
-
-    setRows((previous) => [
-      ...previous,
-      Array.from({ length: 3 }, () => makeSet()),
-    ]);
-
-    setExercise(routine.exercises.length);
+    if (replaceExerciseIndex !== null) {
+      const original = routine.exercises[replaceExerciseIndex];
+      setRoutine((previous) => previous ? { ...previous, exercises: previous.exercises.map((item, index) => index === replaceExerciseIndex ? customExercise : item) } : previous);
+      setRows((previous) => previous.map((group, index) => index === replaceExerciseIndex ? Array.from({ length: Math.max(1, group.length) }, () => makeSet()) : group));
+      setSubstitutions((previous) => [...previous, { from: original.name, to: customExercise.name }]);
+      setExercise(replaceExerciseIndex);
+      setReplaceExerciseIndex(null);
+    } else {
+      setRoutine((previous) => previous ? { ...previous, exercises: [...previous.exercises, customExercise] } : previous);
+      setRows((previous) => [...previous, Array.from({ length: 3 }, () => makeSet())]);
+      setExercise(routine.exercises.length);
+    }
     setNewExercise("");
     setAddingExercise(false);
   }
@@ -397,6 +400,8 @@ export default function WorkoutPage() {
         },
         body: JSON.stringify({
           date: scheduledDate,
+          substitutions,
+          skippedExercises: routine.exercises.filter((_, index) => !(rows[index] || []).some((set) => set.done)).map((exercise) => exercise.name),
           workoutType: workoutTypeEnum,
           notes: routine.name,
           planRoutineId: routine.id,
@@ -441,6 +446,22 @@ export default function WorkoutPage() {
       clearSession(user.uid, routine.id);
       setFinished(true);
       window.dispatchEvent(new CustomEvent("fitness-record-saved"));
+      if (typeof data.recordId === "string") {
+        void fetch("/api/ai/session-review", {
+          method: "POST",
+          headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+          body: JSON.stringify({ recordId: data.recordId }),
+          cache: "no-store",
+        }).then(async (reviewResponse) => {
+          const reviewData = await reviewResponse.json();
+          if (reviewResponse.ok && typeof reviewData.review === "string") {
+            setSessionReview(reviewData.review);
+          } else {
+            setReviewUnavailable(true);
+          }
+        }).catch(() => setReviewUnavailable(true));
+      }
+
     } catch (err) {
       setError(
         err instanceof Error
@@ -525,12 +546,12 @@ export default function WorkoutPage() {
             onSubmit={addExercise}
           >
             <label className="min-w-0 flex-1 text-xs text-ink-soft">
-              Exercise name
+              {replaceExerciseIndex !== null ? "Replacement exercise" : "Exercise name"}
               <input
                 autoFocus
                 value={newExercise}
                 onChange={(event) => setNewExercise(event.target.value)}
-                placeholder="Add a movement to this session"
+                placeholder={replaceExerciseIndex !== null ? "Enter the exercise you performed instead" : "Add a movement to this session"}
                 className="mt-1 w-full rounded-xl bg-field px-3 py-2.5"
               />
             </label>
@@ -539,7 +560,7 @@ export default function WorkoutPage() {
               type="submit"
               className="self-end rounded-xl bg-butter px-4 py-2.5 text-sm font-bold text-butter-ink"
             >
-              Add exercise
+              {replaceExerciseIndex !== null ? "Use replacement" : "Add exercise"}
             </button>
 
             <button
@@ -547,6 +568,7 @@ export default function WorkoutPage() {
               onClick={() => {
                 setAddingExercise(false);
                 setNewExercise("");
+                setReplaceExerciseIndex(null);
               }}
               className="self-end rounded-xl border border-line px-4 py-2.5 text-sm"
             >
@@ -575,7 +597,9 @@ export default function WorkoutPage() {
                       : "◉"}
                   </p>
 
-                  <p className="mt-3 text-sm text-ink-soft">
+                  <button type="button" onClick={() => { setReplaceExerciseIndex(exercise); setAddingExercise(true); setNewExercise(""); }} className="mt-3 rounded-xl border border-line px-3 py-2 text-xs text-ink-soft">Replace with another exercise</button>
+
+              <p className="mt-3 text-sm text-ink-soft">
                     Movement guide
                   </p>
 
@@ -814,9 +838,11 @@ export default function WorkoutPage() {
               Session saved · nice work!
             </h2>
 
-            <p className="mt-2 text-sm text-ink-soft">
-              {completed} sets completed for {scheduledDate}. Your workout is in your training history.
-            </p>
+            <div className="mt-2 text-sm text-ink-soft">
+              <p>{completed} sets completed for {scheduledDate}. Your workout is in your training history.</p>
+              {sessionReview && <p className="mt-3 rounded-xl bg-sunken p-3 text-left text-sm text-ink-soft"><strong className="block text-ink">KAIRO session review</strong><br />{sessionReview}</p>}
+              {reviewUnavailable && !sessionReview && <p className="mt-3 text-xs text-ink-mute">Your workout is saved. The AI review is temporarily unavailable; your completed session is still in your history.</p>}
+            </div>
 
             <div className="mt-4 flex flex-wrap gap-3">
               <button

@@ -103,7 +103,11 @@ export default function StatsPage() {
 
   const muscle = (() => {
     const sums = new Map<string, number>();
-    for (const w of filtered) for (const e of w.exercises || []) sums.set(e.muscle || "Uncategorized", (sums.get(e.muscle || "Uncategorized") || 0) + e.sets);
+    for (const w of filtered) for (const e of w.exercises || []) {
+      const sets = Array.isArray(e.setDetails) ? e.setDetails.filter(set => set.completed).length : e.sets;
+      const group = inferExerciseMuscle(e.name, e.muscle) || "Uncategorized";
+      if (sets > 0) sums.set(group, (sums.get(group) || 0) + sets);
+    }
     return [...sums].sort((a, b) => b[1] - a[1]);
   })();
 
@@ -169,7 +173,8 @@ export default function StatsPage() {
     for (const w of todayWorkouts) {
       for (const e of w.exercises || []) {
         const muscle = inferExerciseMuscle(e.name, e.muscle) || "Uncategorized";
-        sums.set(muscle, (sums.get(muscle) || 0) + e.sets);
+        const sets = Array.isArray(e.setDetails) ? e.setDetails.filter(set => set.completed).length : e.sets;
+        if (sets > 0) sums.set(muscle, (sums.get(muscle) || 0) + sets);
       }
     }
     return Object.fromEntries(sums);
@@ -277,8 +282,8 @@ export default function StatsPage() {
           {view === "Fatigue" && (
             <div className="mt-5 grid gap-3 sm:grid-cols-2">
               <article className="rounded-2xl bg-sunken p-4"><p className="text-sm text-ink-soft">Recent training days</p><p className="mt-2 text-2xl font-bold">{filtered.length}</p><p className="mt-1 text-xs text-ink-mute">Within the selected window</p></article>
-              <article className="rounded-2xl bg-sunken p-4"><p className="text-sm text-ink-soft">Recovery spacing</p><p className="mt-2 text-sm text-ink-soft">{filtered.length < 2 ? "Log another session to see your training rhythm." : `${new Set(filtered.map(w => w.date)).size} active days · consider a recovery day when you feel run down.`}</p></article>
-              <p className="sm:col-span-2 text-xs text-ink-mute">This is a simple training-frequency view, not a medical or recovery assessment.</p>
+              <article className="rounded-2xl bg-sunken p-4"><p className="text-sm text-ink-soft">Session spacing</p><p className="mt-2 text-sm text-ink-soft">{filtered.length < 2 ? "Log another session to see your training rhythm." : `${new Set(filtered.map(w => w.date)).size} active days · consider a recovery day when you feel run down.`}</p></article>
+              <p className="sm:col-span-2 text-xs text-ink-mute">This shows logged session timing only; it does not measure recovery or muscle growth.</p>
             </div>
           )}
 
