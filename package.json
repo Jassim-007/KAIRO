@@ -8,6 +8,7 @@
     "start": "next start",
     "lint": "eslint",
     "test:account-deletion": "node --test scripts/test-account-deletion-policy.mjs",
+    "test:firebase-admin-lazy": "node --test scripts/test-firebase-admin-lazy.mjs",
     "test:workout-schedule": "node --experimental-strip-types --test scripts/test-workout-schedule.mjs",
     "test:security-policies": "node --experimental-strip-types --test scripts/test-security-policies.mjs"
   },
