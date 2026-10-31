@@ -6,6 +6,7 @@ import {
   workspaceErrorResponse,
 } from "@/lib/server/workspace-security";
 import { getUserFitnessRoot } from "@/lib/server/nutrition";
+import { apiTraceId, logApiFailure, withApiObservability } from "@/lib/server/api-observability";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -23,6 +24,7 @@ function serialize(doc: QueryDocumentSnapshot) {
 }
 
 export async function GET(request: Request) {
+  const traceId = apiTraceId();
   const timings: Record<string, number> = {};
   let phaseStarted = performance.now();
 
@@ -44,13 +46,13 @@ export async function GET(request: Request) {
       ? new Date(`${selectedDate}T00:00:00.000Z`)
       : null;
     if (!parsed || Number.isNaN(parsed.getTime()) || parsed.toISOString().slice(0, 10) !== selectedDate) {
-      return NextResponse.json({ error: "Choose a valid date." }, { status: 400 });
+      return withApiObservability(NextResponse.json({ error: "Choose a valid date." }, { status: 400 }), traceId, timings);
     }
 
     phaseStarted = performance.now();
     const [nutritionSnap, waterSnap, dailyWorkouts, dailyWeights, goalsSnap, weightsSnap, workoutsSnap, planSnap, datePlanSnap] = await Promise.all([
-      root.collection("nutrition").where("date", "==", selectedDate).get(),
-      root.collection("water").where("date", "==", selectedDate).get(),
+      root.collection("nutrition").where("loggedBy", "==", user.uid).where("date", "==", selectedDate).get(),
+      root.collection("water").where("loggedBy", "==", user.uid).where("date", "==", selectedDate).get(),
       root.collection("workouts").where("date", "==", selectedDate).where("subjectUid", "==", user.uid).get(),
       root.collection("weight").where("date", "==", selectedDate).where("subjectUid", "==", user.uid).get(),
       root.collection("fitnessGoals").doc(user.uid).get(),
@@ -89,14 +91,9 @@ export async function GET(request: Request) {
       days: planSnap.exists ? planSnap.data()?.days ?? [] : dayNames.map((day) => ({ day, routines: [] })),
       datePlan: datePlanSnap.exists ? datePlanSnap.data()?.routines ?? [] : null,
     });
-    response.headers.set(
-      "Server-Timing",
-      Object.entries(timings)
-        .map(([name, duration]) => `${name};dur=${duration.toFixed(1)}`)
-        .join(", "),
-    );
-    return response;
+    return withApiObservability(response, traceId, timings);
   } catch (error) {
-    return workspaceErrorResponse(error);
+    if (!(error instanceof Error && error.name === "WorkspaceError")) logApiFailure("dashboard", traceId, error);
+    return withApiObservability(workspaceErrorResponse(error), traceId, timings);
   }
 }

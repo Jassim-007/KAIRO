@@ -310,15 +310,10 @@ export default function NaturalLog({
         setMessage("Reply received, but chat history could not be saved."),
       );
 
-      const mealDrafts = result.items.filter((draft) => draft.kind === "nutrition");
-      if (mealDrafts.length) {
-        setPendingMeals((meals) => [...meals, ...mealDrafts]);
-        setMessage("Review the meal estimate below and confirm it before it is saved.");
-      }
       let saved = 0;
       const failures: string[] = [];
 
-      for (const draft of result.items.filter((item) => item.kind !== "nutrition")) {
+      for (const draft of result.items) {
         try {
           await saveDraft(draft);
           saved += 1;
@@ -336,7 +331,7 @@ export default function NaturalLog({
       }
 
       if (failures.length === 0) {
-        if (!mealDrafts.length) setMessage("");
+        setMessage("");
       } else {
         setMessage(
           `${saved} ${saved === 1 ? "entry" : "entries"} added; ${failures.length} ${failures.length === 1 ? "entry needs" : "entries need"} a retry.`,

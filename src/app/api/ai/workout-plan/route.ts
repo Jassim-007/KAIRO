@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getUserFitnessRoot } from "@/lib/server/nutrition";
 import { enforceRateLimit, requireUser, workspaceErrorResponse, WorkspaceError } from "@/lib/server/workspace-security";
 import { recordGeminiUsage } from "@/lib/server/gemini-usage";
+import { apiTraceId, logApiFailure, withApiObservability } from "@/lib/server/api-observability";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -76,6 +77,9 @@ function validatePlan(value: unknown) {
 }
 
 export async function POST(request: Request) {
+  const traceId = apiTraceId();
+  const timings: Record<string, number> = {};
+  const startedAt = performance.now();
   try {
     const user = await requireUser(request);
     try {
@@ -179,16 +183,18 @@ export async function POST(request: Request) {
     ].join("\n");
     const endpoint = "https://generativelanguage.googleapis.com/v1beta/models/" + encodeURIComponent(model) + ":generateContent";
     try { await recordGeminiUsage(user.uid, model, undefined); } catch (usageError) { console.error("Gemini usage tracking failed", usageError); }
+    const geminiStartedAt = performance.now();
     const response = await fetch(endpoint, {
       method: "POST",
       headers: { "Content-Type": "application/json", "x-goog-api-key": apiKey },
       body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }], generationConfig: { responseMimeType: "application/json", ...(requirePlan ? { responseSchema: workoutResponseSchema } : {}), temperature: 0.2 } }),
       signal: AbortSignal.timeout(25000),
     });
+    timings.gemini = performance.now() - geminiStartedAt;
     if (!response.ok) {
       const provider = await response.json().catch(() => null) as { error?: { message?: unknown } } | null;
-      const providerMessage = typeof provider?.error?.message === "string" ? provider.error.message.replaceAll(apiKey, "[redacted]").slice(0, 300) : "";
-      console.error("Gemini workout plan failed", { status: response.status, message: providerMessage });
+      const providerMessage = typeof provider?.error?.message === "string" ? provider.error.message.slice(0, 300) : "";
+      console.error("Gemini workout plan failed", { route: "ai_workout_plan", traceId, status: response.status });
       if (response.status === 429) throw new WorkspaceError("The workout coach is busy right now. Your message is still here; wait a little, then try again.", 429);
       if (response.status === 402 || /prepay|no credits|credit balance|billing.*required/i.test(providerMessage.toLowerCase())) {
         throw new WorkspaceError("Gemini's project doesn't have active credits right now. Check the API key's project and try again.", 503);
@@ -217,11 +223,15 @@ export async function POST(request: Request) {
     if (!plan && /\b(?:here(?:'s| is) (?:your|the)|i(?:'ve| have) (?:made|built|put together|set up)|all lined up and ready)\b.{0,80}\b(?:workout|session|plan)\b/i.test(reply)) {
       reply = "I can build that into a workout card when you want. Tell me what you'd like included.";
     }
-    return NextResponse.json({ reply, plan: plan || null });
+    timings.total = performance.now() - startedAt;
+    return withApiObservability(NextResponse.json({ reply, plan: plan || null }), traceId, timings);
   } catch (error) {
-    return workspaceErrorResponse(error);
+    timings.total = performance.now() - startedAt;
+    if (error instanceof Error && error.name === "TimeoutError") {
+      logApiFailure("ai_workout_plan", traceId, error);
+      return withApiObservability(workspaceErrorResponse(new WorkspaceError("The workout coach took too long to respond. Your plan was not scheduled—try again in a bit.", 504)), traceId, timings);
+    }
+    if (!(error instanceof WorkspaceError)) logApiFailure("ai_workout_plan", traceId, error);
+    return withApiObservability(workspaceErrorResponse(error), traceId, timings);
   }
 }
-
-
-
