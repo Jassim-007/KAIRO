@@ -1,6 +1,8 @@
+import { localDateForRequest } from "@/lib/server/dates";
 
 import { NextResponse } from "next/server";
 import { adminDb } from "@/lib/server/firebase-admin";
+import { workspaceMembershipCanReadSharedData } from "@/lib/server/request-policies";
 import {
   enforceRateLimit,
   requireUser,
@@ -27,7 +29,7 @@ export async function GET(request: Request) {
 
     if (!membershipSnapshot.exists) {
       const requestedDate = new URL(request.url).searchParams.get("date");
-      const date = requestedDate ?? new Date().toISOString().slice(0, 10);
+      const date = requestedDate ?? localDateForRequest(request);
       const parsedDate = /^\d{4}-\d{2}-\d{2}$/.test(date) ? new Date(`${date}T00:00:00.000Z`) : null;
       if (!parsedDate || Number.isNaN(parsedDate.getTime()) || parsedDate.toISOString().slice(0, 10) !== date) {
         throw new WorkspaceError("Choose a valid activity date.", 400);
@@ -62,6 +64,9 @@ if (typeof workspaceId !== "string" || !workspaceId.trim()) {
     if (!workspaceSnapshot.exists) {
       throw new WorkspaceError("Your workspace could not be found.", 404);
     }
+    if (!workspaceMembershipCanReadSharedData(membership, workspaceSnapshot.data())) {
+      throw new WorkspaceError("Your workspace membership is no longer active.", 403);
+    }
     if (workspaceSnapshot.data()?.status === "deleting") {
   throw new WorkspaceError(
     "This workspace is being deleted. Please try again later.",
@@ -90,8 +95,7 @@ if (typeof workspaceId !== "string" || !workspaceId.trim()) {
     const memberNames = new Map(members.map((member) => [member.uid, String(member.displayName || "Member")]));
 
     const requestedDate = new URL(request.url).searchParams.get("date");
-    const today = new Date().toISOString().slice(0, 10);
-    const activityDate = requestedDate ?? today;
+    const activityDate = requestedDate ?? localDateForRequest(request);
     const validDate = /^\d{4}-\d{2}-\d{2}$/.test(activityDate)
       && !Number.isNaN(new Date(`${activityDate}T00:00:00.000Z`).getTime())
       && new Date(`${activityDate}T00:00:00.000Z`).toISOString().slice(0, 10) === activityDate;

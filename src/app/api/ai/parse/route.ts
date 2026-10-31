@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { getUserFitnessRoot } from "@/lib/server/nutrition";
 import { recordGeminiUsage } from "@/lib/server/gemini-usage";
-import { requireUser, workspaceErrorResponse, WorkspaceError } from "@/lib/server/workspace-security";
+import { readBoundedJson, RequestBodyTooLarge } from "@/lib/server/request-body";
+import { enforceGeminiRateLimit, requireUser, workspaceErrorResponse, WorkspaceError } from "@/lib/server/workspace-security";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -161,9 +162,13 @@ export async function POST(request: Request) {
   try {
     const user = await requireUser(request);
     timings.auth = performance.now() - phaseStarted;
-    const body = await request.json().catch(() => null) as { text?: unknown; date?: unknown; history?: unknown } | null;
+    await enforceGeminiRateLimit(user.uid, "ai_parse", 30, 60 * 60 * 1000);
+    const body = await readBoundedJson(request, 100_000).catch((error) => {
+      if (error instanceof RequestBodyTooLarge) throw new WorkspaceError("That request is too large. Try a shorter note.", 413);
+      return null;
+    }) as { text?: unknown; date?: unknown; history?: unknown } | null;
     if (typeof body?.text !== "string" || !body.text.trim()) throw new WorkspaceError("Tell me what happened and I’ll help sort it out.", 400);
-    if (body.text.length > 80000) throw new WorkspaceError("That note is too big to send all at once. Try splitting it into a few chunks.", 413);
+    if (body.text.length > 20000) throw new WorkspaceError("That note is too big to send all at once. Try splitting it into a few chunks.", 413);
     if (!validDate(body.date)) throw new WorkspaceError("Choose a valid date.", 400);
     const requestedDate = historyDate(body.text, body.date);
     if (requestedDate && /\b(what did i|did i|have i|show me|tell me|how much|how many|what was|what were|my (?:food|meals|water|weight|workout|workouts)|log(?:ged)? on|record(?:ed)? on)\b/i.test(body.text)) {
@@ -174,12 +179,13 @@ export async function POST(request: Request) {
       const reply = await answerRecentSavedHistory(user.uid, body.date, body.text);
       return NextResponse.json({ reply, items: [] });
     }
+    if (Array.isArray(body.history) && body.history.length > 8) throw new WorkspaceError("Keep chat context to the latest 8 messages.", 400);
     const history = Array.isArray(body.history)
       ? body.history.slice(-8).filter((entry): entry is { role: "user" | "assistant"; content: string } =>
           !!entry && typeof entry === "object" &&
           ((entry as { role?: unknown }).role === "user" || (entry as { role?: unknown }).role === "assistant") &&
           typeof (entry as { content?: unknown }).content === "string")
-          .map(({ role, content }) => ({ role, content: content.slice(0, 4000) }))
+          .map(({ role, content }) => ({ role, content: content.slice(0, 2000) }))
       : [];
     const apiKey = process.env.GEMINI_API_KEY;
     if (!apiKey) throw new WorkspaceError("AI capture is not configured yet. Add a Gemini API key on the server to enable it.", 503);
@@ -234,8 +240,7 @@ export async function POST(request: Request) {
       }
       if (response.status === 429) throw new WorkspaceError("Gemini's busy or at its limit right now. Nothing was logged—try again in a bit.", 429);
       if (response.status === 400) {
-        const detail = providerDetails !== "[]" ? ` Details: ${providerDetails}` : "";
-        throw new WorkspaceError(`Gemini rejected the request: ${providerMessage}${detail}`, 502);
+        throw new WorkspaceError("The AI could not process that note. Try shortening or rephrasing it.", 502);
       }
       throw new WorkspaceError("I couldn't reach my AI brain just now, so nothing was logged. Try again in a bit.", 502);
     }

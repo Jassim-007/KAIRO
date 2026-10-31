@@ -1,3 +1,4 @@
+import { localDateForRequest } from "@/lib/server/dates";
 import { NextResponse } from "next/server";
 import { FieldPath, type QueryDocumentSnapshot } from "firebase-admin/firestore";
 import {
@@ -41,7 +42,7 @@ export async function GET(request: Request) {
     timings.account = performance.now() - phaseStarted;
 
     const date = new URL(request.url).searchParams.get("date");
-    const selectedDate = date ?? new Date().toISOString().slice(0, 10);
+    const selectedDate = date ?? localDateForRequest(request);
     const parsed = /^\d{4}-\d{2}-\d{2}$/.test(selectedDate)
       ? new Date(`${selectedDate}T00:00:00.000Z`)
       : null;

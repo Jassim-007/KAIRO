@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { getUserFitnessRoot } from "@/lib/server/nutrition";
-import { enforceRateLimit, requireUser, workspaceErrorResponse, WorkspaceError } from "@/lib/server/workspace-security";
+import { enforceGeminiRateLimit, requireUser, workspaceErrorResponse, WorkspaceError } from "@/lib/server/workspace-security";
 import { recordGeminiUsage } from "@/lib/server/gemini-usage";
+import { readBoundedJson, RequestBodyTooLarge } from "@/lib/server/request-body";
 import { apiTraceId, logApiFailure, withApiObservability } from "@/lib/server/api-observability";
 
 export const runtime = "nodejs";
@@ -83,12 +84,15 @@ export async function POST(request: Request) {
   try {
     const user = await requireUser(request);
     try {
-      await enforceRateLimit(user.uid, "ai_workout_plan", 20, 3600000);
+      await enforceGeminiRateLimit(user.uid, "ai_workout_plan", 20, 3600000);
     } catch (error) {
       if (error instanceof WorkspaceError && error.status === 429) throw new WorkspaceError("The workout coach is busy right now. Your message is still here; wait a little, then try again.", 429);
       throw error;
     }
-    const body = await request.json().catch(() => null) as { text?: unknown; date?: unknown; today?: unknown; history?: unknown; requirePlan?: unknown } | null;
+    const body = await readBoundedJson(request, 64_000).catch((error) => {
+      if (error instanceof RequestBodyTooLarge) throw new WorkspaceError("Workout request is too large.", 413);
+      return null;
+    }) as { text?: unknown; date?: unknown; today?: unknown; history?: unknown; requirePlan?: unknown } | null;
     if (typeof body?.text !== "string" || !body.text.trim() || body.text.length > 2000) {
       throw new WorkspaceError("Tell me what kind of workout you're looking for.", 400);
     }

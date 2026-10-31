@@ -31,6 +31,12 @@ async function finishDeletedAccount() {
   // give it a bounded window to clear the local session, but never make
   // leaving this page depend on that persistence work finishing.
   let timeout: number | undefined;
+  if (typeof window !== "undefined") {
+    for (let index = window.localStorage.length - 1; index >= 0; index -= 1) {
+      const key = window.localStorage.key(index);
+      if (key?.startsWith("kairo_session_")) window.localStorage.removeItem(key);
+    }
+  }
   const signOutAttempt = signOut(auth).catch(() => undefined);
   await Promise.race([
     signOutAttempt,

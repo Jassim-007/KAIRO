@@ -10,7 +10,7 @@ const sections = [
   {
     title: "2. Sharing with your connected partner",
     content:
-      "Information saved in your shared workspace may be visible to your connected partner, including shared workouts, nutrition, hydration, body weight, goals, and progress, depending on the features you use. Only connect with someone you trust. Your password and authentication credentials are not intended to be shared.",
+      "Both active members of a shared workspace can view each member’s workout, nutrition, water, and body-weight records. Each member can create records only for themselves, and only the record owner can edit or delete them. Personal goals, plans, and exercise libraries remain visible only to their owner. Solo-account records are visible only to that account, and workspace data is never exposed to people outside that workspace. Only connect with someone you trust. Your password and authentication credentials are not shared.",
   },
   {
     title: "3. AI processing",

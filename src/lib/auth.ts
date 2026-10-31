@@ -59,5 +59,11 @@ export async function sendPasswordReset(email: string) {
 
 export async function logOut() {
   await authPersistenceReady;
+  if (typeof window !== "undefined") {
+    for (let index = window.localStorage.length - 1; index >= 0; index -= 1) {
+      const key = window.localStorage.key(index);
+      if (key?.startsWith("kairo_session_")) window.localStorage.removeItem(key);
+    }
+  }
   await signOut(auth);
 }

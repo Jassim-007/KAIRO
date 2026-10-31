@@ -1,3 +1,4 @@
+import { localDateForRequest } from "@/lib/server/dates";
 import { NextResponse } from "next/server";
 import type { QueryDocumentSnapshot } from "firebase-admin/firestore";
 import { enforceRateLimit, requireUser, workspaceErrorResponse } from "@/lib/server/workspace-security";
@@ -5,11 +6,6 @@ import { getUserFitnessRoot } from "@/lib/server/nutrition";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-
-function localDate() {
-  const date = new Date();
-  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
-}
 
 function sumNutrition(docs: QueryDocumentSnapshot[]) {
   return docs.reduce((total, doc) => {
@@ -34,7 +30,7 @@ export async function GET(request: Request) {
     phaseStarted = performance.now();
     const { root } = await getUserFitnessRoot(user.uid);
     timings.account = performance.now() - phaseStarted;
-    const date = new URL(request.url).searchParams.get("date") ?? localDate();
+    const date = new URL(request.url).searchParams.get("date") ?? localDateForRequest(request);
     const parsedDate = /^\d{4}-\d{2}-\d{2}$/.test(date) ? new Date(`${date}T00:00:00.000Z`) : null;
     if (!parsedDate || Number.isNaN(parsedDate.getTime()) || parsedDate.toISOString().slice(0, 10) !== date) {
       return NextResponse.json({ error: "Choose a valid date." }, { status: 400 });
@@ -42,10 +38,10 @@ export async function GET(request: Request) {
 
     phaseStarted = performance.now();
     const [nutritionSnap, waterSnap, workoutsSnap, weightsSnap, goalsSnap] = await Promise.all([
-      root.collection("nutrition").where("date", "==", date).get(),
-      root.collection("water").where("date", "==", date).get(),
-      root.collection("workouts").where("date", "==", date).get(),
-      root.collection("weight").where("date", "==", date).get(),
+      root.collection("nutrition").where("loggedBy", "==", user.uid).where("date", "==", date).get(),
+      root.collection("water").where("loggedBy", "==", user.uid).where("date", "==", date).get(),
+      root.collection("workouts").where("subjectUid", "==", user.uid).where("date", "==", date).get(),
+      root.collection("weight").where("subjectUid", "==", user.uid).where("date", "==", date).get(),
       root.collection("fitnessGoals").doc(user.uid).get(),
     ]);
 

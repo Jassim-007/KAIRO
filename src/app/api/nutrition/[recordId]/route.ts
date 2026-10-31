@@ -46,7 +46,7 @@ async function getRecordReference(
     );
   }
 
-  if (snapshot.data()?.loggedBy !== uid) throw new WorkspaceError("This nutrition entry is private to its owner.", 403);
+  if (snapshot.data()?.loggedBy !== uid) throw new WorkspaceError("Only the member who logged this nutrition entry can change it.", 403);
 
   return ref;
 }

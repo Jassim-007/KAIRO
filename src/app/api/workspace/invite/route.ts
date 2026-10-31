@@ -10,6 +10,7 @@ import {
   WorkspaceError,
 } from "@/lib/server/workspace-security";
 import { activeWorkspaceMemberCount } from "@/lib/server/account-deletion-policy";
+import { isWorkspaceInviteExpiredOrUsed } from "@/lib/server/expiration";
 
 export const runtime = "nodejs";
 
@@ -106,6 +107,34 @@ export async function POST(request: Request) {
       const members = await transaction.get(adminDb.collection("workspaceMembers").where("workspaceId", "==", workspaceId));
       if (activeWorkspaceMemberCount(members.docs.map((doc) => doc.data())) >= 2) {
         throw new WorkspaceError("That workspace already has two members.", 409);
+      }
+
+      // Opportunistically remove expired/consumed invite documents for this
+      // workspace whenever its owner creates a replacement. This keeps cleanup
+      // request-driven and avoids paid TTL or scheduled infrastructure.
+      const existingInvites = await transaction.get(
+        adminDb
+          .collection("workspaceInvites")
+          .where("workspaceId", "==", workspaceId)
+          .limit(400),
+      );
+      for (const existingInvite of existingInvites.docs) {
+        const data = existingInvite.data();
+        const oldExpiresAt = data.expiresAt as Timestamp | undefined;
+        const expiry =
+          oldExpiresAt && typeof oldExpiresAt.toMillis === "function"
+            ? oldExpiresAt.toMillis()
+            : undefined;
+        if (
+          isWorkspaceInviteExpiredOrUsed(
+            expiry,
+            Number(data.uses ?? 0),
+            Number(data.maxUses ?? 1),
+            now.toMillis(),
+          )
+        ) {
+          transaction.delete(existingInvite.ref);
+        }
       }
 
       transaction.create(inviteRef, {

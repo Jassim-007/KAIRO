@@ -1,15 +1,20 @@
-import { FieldValue } from "firebase-admin/firestore";
+import { FieldValue, Timestamp } from "firebase-admin/firestore";
 import { NextResponse } from "next/server";
 import { getUserFitnessRoot } from "@/lib/server/nutrition";
 import { recordGeminiUsage } from "@/lib/server/gemini-usage";
-import { enforceRateLimit, requireUser, workspaceErrorResponse, WorkspaceError } from "@/lib/server/workspace-security";
+import { readBoundedJson, RequestBodyTooLarge } from "@/lib/server/request-body";
+import { enforceGeminiRateLimit, requireUser, workspaceErrorResponse, WorkspaceError } from "@/lib/server/workspace-security";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export async function POST(request: Request) {
+  let releaseClaim: (() => Promise<unknown>) | null = null;
   try {
     const user = await requireUser(request);
-    await enforceRateLimit(user.uid, "ai_session_review", 30, 3600000);
-    const body = await request.json().catch(() => null) as { recordId?: unknown } | null;
+    await enforceGeminiRateLimit(user.uid, "ai_session_review", 30, 3600000);
+    const body = await readBoundedJson(request, 8_000).catch((error) => {
+      if (error instanceof RequestBodyTooLarge) throw new WorkspaceError("Workout review request is too large.", 413);
+      return null;
+    }) as { recordId?: unknown } | null;
     if (typeof body?.recordId !== "string" || !/^[\w-]{1,150}$/.test(body.recordId)) throw new WorkspaceError("Choose a saved workout session.", 400);
     const { root } = await getUserFitnessRoot(user.uid);
     const workoutRef = root.collection("workouts").doc(body.recordId);
@@ -30,8 +35,21 @@ export async function POST(request: Request) {
     await memoryRef.set({ ownerUid: user.uid, recordId: workoutRef.id, summary, updatedAt: FieldValue.serverTimestamp() }, { merge: true });
     const existing = data.sessionReview;
     if (existing && typeof existing.text === "string") return NextResponse.json({ review: existing.text, summary, alreadyReviewed: true });
+    const claim = await root.firestore.runTransaction(async (tx) => {
+      const current = await tx.get(workoutRef);
+      const currentData = current.data();
+      if (typeof currentData?.sessionReview?.text === "string") return { existing: currentData.sessionReview.text as string };
+      const claimedAt = currentData?.sessionReviewClaimedAt;
+      if (claimedAt instanceof Timestamp && Date.now() - claimedAt.toMillis() < 2 * 60 * 1000) {
+        throw new WorkspaceError("A review is already being generated for this session. Please wait a moment.", 409);
+      }
+      tx.update(workoutRef, { sessionReviewClaimedAt: Timestamp.now() });
+      return { claimed: true as const };
+    });
+    if ("existing" in claim) return NextResponse.json({ review: claim.existing, summary, alreadyReviewed: true });
+    releaseClaim = () => workoutRef.update({ sessionReviewClaimedAt: FieldValue.delete() });
     const apiKey = process.env.GEMINI_API_KEY;
-    if (!apiKey) return NextResponse.json({ summary, review: null, reviewUnavailable: true });
+    if (!apiKey) { await workoutRef.update({ sessionReviewClaimedAt: FieldValue.delete() }); releaseClaim = null; return NextResponse.json({ summary, review: null, reviewUnavailable: true }); }
     const model = process.env.GEMINI_MODEL || "gemini-3.5-flash-lite";
     try { await recordGeminiUsage(user.uid, model, undefined); } catch (error) { console.error("Gemini usage tracking failed", error); }
     const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`, {
@@ -44,10 +62,12 @@ export async function POST(request: Request) {
     const review = result.candidates?.[0]?.content?.parts?.map((part) => part.text || "").join("").trim().slice(0, 1200);
     if (!review) throw new Error("Gemini returned no review");
     try { await recordGeminiUsage(user.uid, model, result.usageMetadata, false); } catch (error) { console.error("Gemini usage tracking failed", error); }
-    await workoutRef.set({ sessionReview: { text: review, generatedAt: FieldValue.serverTimestamp(), model } }, { merge: true });
+    await workoutRef.set({ sessionReview: { text: review, generatedAt: FieldValue.serverTimestamp(), model }, sessionReviewClaimedAt: FieldValue.delete() }, { merge: true });
     await memoryRef.set({ review, updatedAt: FieldValue.serverTimestamp() }, { merge: true });
+    releaseClaim = null;
     return NextResponse.json({ review, summary });
   } catch (error) {
+    if (releaseClaim) await releaseClaim().catch((releaseError) => console.error("Workout review claim release failed", releaseError));
     if (!(error instanceof WorkspaceError)) console.error("Workout session review unavailable", error);
     return workspaceErrorResponse(error);
   }

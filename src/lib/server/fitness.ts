@@ -50,7 +50,7 @@ function text(
   return value.trim();
 }
 
-function finite(value: unknown, label: string, min: number, max: number) {
+function finite(value: unknown, label: string, min: number, max: number, integer = false) {
   if (
     typeof value !== "number" ||
     !Number.isFinite(value) ||
@@ -63,12 +63,7 @@ function finite(value: unknown, label: string, min: number, max: number) {
     );
   }
 
-  if (
-    (label === "Water amount" ||
-      label === "Sets" ||
-      label === "Reps") &&
-    !Number.isInteger(value)
-  ) {
+  if (integer && !Number.isInteger(value)) {
     throw new WorkspaceError(`${label} must be a whole number.`, 400);
   }
 
@@ -117,7 +112,7 @@ export async function parseFitnessEntry(
   if (kind === "water") {
     return {
       date,
-      amountMl: finite(data.amountMl, "Water amount", 1, 5000),
+      amountMl: finite(data.amountMl, "Water amount", 1, 5000, true),
       notes,
       loggedBy: uid,
     };
@@ -128,7 +123,7 @@ export async function parseFitnessEntry(
   // Weight records must always belong to the signed-in user.
   if (kind === "weight" && who.subjectUid !== uid) {
     throw new WorkspaceError(
-      "Weight entries are private to your account.",
+      "Weight entries can only be recorded for your own account.",
       403,
     );
   }
@@ -198,7 +193,7 @@ export async function parseFitnessEntry(
 
           return {
             weightKg: finite(set.weightKg, "Set weight", 0, 1000),
-            reps: finite(set.reps, "Set reps", 1, 1000),
+            reps: finite(set.reps, "Set reps", 1, 1000, true),
             rir,
             completed: set.completed,
           };
@@ -207,8 +202,8 @@ export async function parseFitnessEntry(
 
     return {
       name: text(exercise.name, "Exercise name", 1, 80),
-      sets: finite(exercise.sets, "Sets", 1, 100),
-      reps: finite(exercise.reps, "Reps", 1, 1000),
+      sets: finite(exercise.sets, "Sets", 1, 100, true),
+      reps: finite(exercise.reps, "Reps", 1, 1000, true),
       weightKg: finite(exercise.weightKg ?? 0, "Exercise weight", 0, 1000),
       ...(typeof exercise.muscle === "string"
         ? { muscle: exercise.muscle.slice(0, 40) }
@@ -230,6 +225,12 @@ export async function parseFitnessEntry(
       : {}),
     ...(typeof data.planDay === "string" && data.planDay.length <= 20
       ? { planDay: data.planDay }
+      : {}),
+    ...(Array.isArray(data.skippedExercises)
+      ? { skippedExercises: data.skippedExercises.slice(0, 30).filter((name): name is string => typeof name === "string").map((name) => name.slice(0, 80)) }
+      : {}),
+    ...(Array.isArray(data.substitutions)
+      ? { substitutions: data.substitutions.slice(0, 30).flatMap((item) => item && typeof item === "object" && typeof (item as Record<string, unknown>).from === "string" && typeof (item as Record<string, unknown>).to === "string" ? [{ from: String((item as Record<string, unknown>).from).slice(0, 80), to: String((item as Record<string, unknown>).to).slice(0, 80) }] : []) }
       : {}),
     ...(typeof data.durationMinutes === "number" &&
     Number.isFinite(data.durationMinutes)

@@ -1,7 +1,9 @@
 
 import { NextResponse } from "next/server";
-import { requireUser, workspaceErrorResponse, WorkspaceError } from "@/lib/server/workspace-security";
+import { enforceGeminiRateLimit, requireUser, workspaceErrorResponse, WorkspaceError } from "@/lib/server/workspace-security";
 import { recordGeminiUsage } from "@/lib/server/gemini-usage";
+import { clampFiniteNumber, normalizeLabels } from "@/lib/server/request-policies";
+import { readBoundedJson, RequestBodyTooLarge } from "@/lib/server/request-body";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -31,36 +33,28 @@ function validateMetrics(body: unknown): WeeklyMetricsInput {
   return raw as WeeklyMetricsInput;
 }
 
-function safeNum(v: unknown, fallback = 0): number {
-  const n = Number(v);
-  return Number.isFinite(n) ? n : fallback;
-}
-
-function safeSet(v: unknown): string[] {
-  if (!v || typeof v !== "object") return [];
-  // WeeklyMetrics serializes Set as {0: val, 1: val, ...} or similar — handle array form too
-  if (Array.isArray(v)) return (v as unknown[]).map(String).filter(Boolean);
-  return Object.values(v as Record<string, unknown>).map(String).filter(Boolean);
-}
-
 export async function POST(request: Request) {
   try {
     const user = await requireUser(request);
-
-    const body = await request.json().catch(() => null) as { metrics?: unknown } | null;
+    await enforceGeminiRateLimit(user.uid, "ai_weekly_review", 10, 60 * 60 * 1000);
+    const body = await readBoundedJson(request, 16_000).catch((error) => {
+      if (error instanceof RequestBodyTooLarge) throw new WorkspaceError("Weekly metrics request is too large.", 413);
+      return null;
+    }) as { metrics?: unknown } | null;
     const metrics = validateMetrics(body);
 
-    const currentSessions = safeNum(metrics.currentSessions);
-    const currentSets = safeNum(metrics.currentSets);
-    const currentVolume = safeNum(metrics.currentVolume);
-    const currentMuscles = safeSet(metrics.currentMuscles);
-    const lastSessions = safeNum(metrics.lastSessions);
-    const lastSets = safeNum(metrics.lastSets);
-    const lastVolume = safeNum(metrics.lastVolume);
-    const lastMuscles = safeSet(metrics.lastMuscles);
+    const clamp = (value: unknown, max: number) => clampFiniteNumber(value, max);
+    const currentSessions = clamp(metrics.currentSessions, 30);
+    const currentSets = clamp(metrics.currentSets, 2000);
+    const currentVolume = clamp(metrics.currentVolume, 1000000);
+    const currentMuscles = normalizeLabels(metrics.currentMuscles);
+    const lastSessions = clamp(metrics.lastSessions, 30);
+    const lastSets = clamp(metrics.lastSets, 2000);
+    const lastVolume = clamp(metrics.lastVolume, 1000000);
+    const lastMuscles = normalizeLabels(metrics.lastMuscles);
     const hasCurrentData = Boolean(metrics.hasCurrentData);
     const hasLastData = Boolean(metrics.hasLastData);
-    const volumeDeltaPct = metrics.volumeDeltaPct != null ? safeNum(metrics.volumeDeltaPct) : null;
+    const volumeDeltaPct = metrics.volumeDeltaPct != null ? clampFiniteNumber(metrics.volumeDeltaPct, 1000, -100) : null;
 
     // If there's no data, return a deterministic fallback without calling AI
     if (!hasCurrentData) {

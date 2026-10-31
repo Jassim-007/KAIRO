@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { validateNutrition } from "@/lib/server/nutrition";
 import { recordGeminiUsage } from "@/lib/server/gemini-usage";
-import { enforceRateLimit, requireUser, workspaceErrorResponse, WorkspaceError } from "@/lib/server/workspace-security";
+import { readBoundedJson, RequestBodyTooLarge } from "@/lib/server/request-body";
+import { enforceGeminiRateLimit, requireUser, workspaceErrorResponse, WorkspaceError } from "@/lib/server/workspace-security";
 import { apiTraceId, logApiFailure, withApiObservability } from "@/lib/server/api-observability";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -18,9 +19,12 @@ export async function POST(request: Request) {
     const user = await requireUser(request);
     timings.auth = performance.now() - phaseStarted;
     phaseStarted = performance.now();
-    await enforceRateLimit(user.uid, "ai_food_image", 20, 3600000);
+    await enforceGeminiRateLimit(user.uid, "ai_food_image", 20, 3600000);
     timings.limit = performance.now() - phaseStarted;
-    const body = await request.json().catch(() => null) as { image?: unknown; text?: unknown; date?: unknown } | null;
+    const body = await readBoundedJson(request, 7_500_000).catch((error) => {
+      if (error instanceof RequestBodyTooLarge) throw new WorkspaceError("Choose a food photo smaller than 5 MB.", 413);
+      return null;
+    }) as { image?: unknown; text?: unknown; date?: unknown } | null;
     if (typeof body?.image !== "string" || body.image.length > 7_000_000) throw new WorkspaceError("Choose a food photo smaller than 5 MB.", 413);
     if (!validDate(body.date)) throw new WorkspaceError("Choose a valid meal date.", 400);
     const match = body.image.match(/^data:(image\/(?:jpeg|png|webp));base64,([A-Za-z0-9+/]+={0,2})$/);

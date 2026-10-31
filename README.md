@@ -5,8 +5,8 @@ A mobile-friendly fitness tracker for a couple or small invite-only group. The a
 ## Current features
 
 - Firebase account sign-in and an invite-only, two-person couple workspace.
-- Private nutrition, water, and weight entries with personal goals and progress.
-- Couple-visible workout history, with workout type, exercises, sets, reps, and load.
+- Workspace-shared nutrition, water, weight, and workout history: both members can view all four categories.
+- Personal goals and progress remain scoped to the signed-in member. Each member can create, edit, or delete only records they own; workouts can be logged only for the signed-in member.
 - A persistent Quick Log panel that can turn one natural-language note into reviewable drafts for meals, hydration, weight, or workouts. It saves nothing until the user confirms.
 - Installable web app metadata for mobile browsers.
 
@@ -32,11 +32,11 @@ The app includes a web manifest and can be installed from a supporting mobile br
 
 ## Data visibility
 
-Nutrition, water, weight, and personal goals are private to the account. Workout logs are readable by both members of the couple workspace. Only the person who logged a workout can edit or delete it.
+Inside a couple workspace, both active members can view nutrition, water, weight, and workout records for either member. Members can create records only for themselves; editing and deleting remain restricted to the record owner. Personal goals, plans, and exercise libraries remain scoped to their owner. Data is never shared outside the workspace. In solo mode, records are visible only to that account.
 
 ## Personal data export and retention
 
-From **Account settings → Your data**, a signed-in member can download a versioned JSON export of their profile, nutrition and water entries they logged, their weight entries, workouts whose subject is their account, personal goals, water goal, workout plan, exercise library, and saved AI chat memory. A workout about the member is included even when their workspace partner logged it, because workout history is shared. The export excludes the other member's profile and personal records, workspace invitations and membership data, authentication credentials, API usage/rate-limit metadata, and Firebase Storage files. The file contains sensitive health and chat information; store it privately. The export is for portability and is not an import/restore file.
+From **Account settings → Your data**, a signed-in member can download a versioned JSON export of their profile, nutrition and water entries they logged, their weight entries, workouts whose subject is their account, personal goals, water goal, workout plan and date-specific plans, exercise library, Quick Log and workout-coach chat memory, and saved session reviews. A workout about the member is included even when their workspace partner logged it, because workout history is shared. The export excludes the other member's profile and personal records, workspace invitations and membership data, authentication credentials, API usage/rate-limit metadata, and Firebase Storage files. The file contains sensitive health and chat information; store it privately. The export is for portability and is not an import/restore file.
 
 Fitness records and profile data have no automatic expiry configured. Saved AI chat memory retains only the latest 80 messages. Members can remove records through the app where supported; deleting an account removes that member's personal data while retaining another member's data. AI provider retention is governed by the provider's current terms; see [AI capture setup](docs/AI_CAPTURE_SETUP.md).
 

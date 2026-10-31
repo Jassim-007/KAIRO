@@ -18,7 +18,7 @@ export async function GET(request: Request) {
     const { root } = await getUserFitnessRoot(user.uid);
     const profileRef = adminDb.collection("users").doc(user.uid);
 
-    const [profile, nutrition, water, weight, workouts, fitnessGoals, waterGoals, plan, memory, exercises] = await Promise.all([
+    const [profile, nutrition, water, weight, workouts, fitnessGoals, waterGoals, plan, memory, workoutMemory, sessionReviews, datePlans, exercises] = await Promise.all([
       profileRef.get(),
       root.collection("nutrition").where("loggedBy", "==", user.uid).get(),
       root.collection("water").where("loggedBy", "==", user.uid).get(),
@@ -28,6 +28,9 @@ export async function GET(request: Request) {
       root.collection("waterGoals").doc(user.uid).get(),
       root.collection("fitnessPlans").doc(user.uid).get(),
       profileRef.collection("fitnessMemory").doc("chat").get(),
+      profileRef.collection("fitnessMemory").doc("workout-chat").get(),
+      profileRef.collection("fitnessMemory").doc("sessions").collection("items").get(),
+      root.collection("fitnessPlanDates").where("__name__", ">=", `${user.uid}_`).where("__name__", "<=", `${user.uid}_\uf8ff`).get(),
       root.collection("exerciseLibraries").doc(user.uid).collection("exercises").get(),
     ]);
 
@@ -54,9 +57,10 @@ export async function GET(request: Request) {
         goals: fitnessGoals.exists ? fitnessGoals.data() : null,
         waterGoal: waterGoals.exists ? waterGoals.data() : null,
         workoutPlan: plan.exists ? plan.data() : null,
+        dateSpecificPlans: records(datePlans),
         exerciseLibrary: records(exercises),
       },
-      aiMemory: memory.exists ? memory.data() : null,
+      aiMemory: { chat: memory.exists ? memory.data() : null, workoutChat: workoutMemory.exists ? workoutMemory.data() : null, sessionReviews: records(sessionReviews) },
       scope: {
         workoutsAboutYou: "Includes this account's workout records from personal storage or its shared workspace, including workouts logged by a partner where available.",
         excluded: ["other members' profiles and personal records", "workspace invitations and membership data", "authentication credentials", "API rate-limit and usage metadata", "Firebase Storage files"],

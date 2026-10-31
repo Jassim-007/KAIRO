@@ -1,0 +1,35 @@
+name: Security checks
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run lint
+      - run: npx next typegen
+      - run: npx tsc --noEmit
+      - run: npm run test:account-deletion
+      - run: npm run test:workout-schedule
+      - run: npm run test:security-policies
+      # Block high/critical advisories. Current moderate transitive findings are
+      # reviewed and documented in docs/SECURITY_OPERATIONS.md; keep npm's
+      # report visible while avoiding an unsafe cross-major override.
+      - run: npm audit --omit=dev --audit-level=high
+      - run: npm run build
+      - uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

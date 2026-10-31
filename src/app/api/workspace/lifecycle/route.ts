@@ -2,9 +2,10 @@ import { type DocumentReference } from "firebase-admin/firestore";
 import { NextResponse } from "next/server";
 import { adminDb } from "@/lib/server/firebase-admin";
 import { memberOwnsRecord, workspaceLifecycleDecision } from "@/lib/server/account-deletion-policy";
-import { requireUser, WorkspaceError, workspaceErrorResponse } from "@/lib/server/workspace-security";
+import { enforceRateLimit, requireUser, WorkspaceError, workspaceErrorResponse } from "@/lib/server/workspace-security";
 
 export const runtime = "nodejs";
+export const maxDuration = 60;
 
 async function deleteRefs(refs: DocumentReference[]) {
   const unique = [...new Map(refs.map((ref) => [ref.path, ref])).values()];
@@ -43,6 +44,7 @@ async function removeMemberData(workspaceId: string, uid: string) {
 export async function POST(request: Request) {
   try {
     const user = await requireUser(request);
+    await enforceRateLimit(user.uid, "workspace_lifecycle", 3, 60 * 60 * 1000);
     const { action } = await request.json().catch(() => ({}));
     if (action !== "leave" && action !== "delete") throw new WorkspaceError("Choose leave or delete workspace.", 400);
     const memberRef = adminDb.collection("workspaceMembers").doc(user.uid);

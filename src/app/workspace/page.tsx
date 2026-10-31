@@ -390,7 +390,7 @@ export default function WorkspacePage() {
             </div>
 
             <p className="mt-5 text-xs leading-5 text-ink-mute">
-              Your shared log shows your partner’s food, nutrition, water, body-weight, and workout records. Your personal records remain in your own trackers.
+              Both workspace members can view each other’s food, water, body-weight, and workout records here. You can create records only for yourself, and only the record owner can edit or delete them. This information is visible only inside this workspace.
             </p>
 
             <div className="mt-7 border-t border-line pt-6">

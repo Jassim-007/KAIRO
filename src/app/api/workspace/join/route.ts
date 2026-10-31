@@ -4,7 +4,6 @@ import { createHash } from "node:crypto";
 import { NextResponse } from "next/server";
 import {
   FieldValue,
-  Timestamp,
 } from "firebase-admin/firestore";
 import { adminDb } from "@/lib/server/firebase-admin";
 import {
@@ -14,6 +13,7 @@ import {
   WorkspaceError,
 } from "@/lib/server/workspace-security";
 import { activeWorkspaceMemberCount } from "@/lib/server/account-deletion-policy";
+import { isWorkspaceInviteExpiredOrUsed } from "@/lib/server/expiration";
 
 export const runtime = "nodejs";
 
@@ -54,7 +54,7 @@ export async function POST(request: Request) {
       .collection("workspaceMembers")
       .doc(user.uid);
 
-    await adminDb.runTransaction(async (transaction) => {
+    const inviteState = await adminDb.runTransaction(async (transaction) => {
       const [memberSnapshot, inviteSnapshot] =
         await Promise.all([
           transaction.get(memberRef),
@@ -76,18 +76,24 @@ export async function POST(request: Request) {
       }
 
       const invite = inviteSnapshot.data()!;
-      const expiresAt = invite.expiresAt as Timestamp;
+      const expiresAt = invite.expiresAt;
+      const expiresAtMs =
+        expiresAt && typeof expiresAt.toMillis === "function"
+          ? expiresAt.toMillis()
+          : undefined;
 
       if (
-        !expiresAt ||
-        typeof expiresAt.toMillis !== "function" ||
-        expiresAt.toMillis() <= Date.now() ||
-        Number(invite.uses ?? 0) >= Number(invite.maxUses ?? 1)
+        isWorkspaceInviteExpiredOrUsed(
+          expiresAtMs,
+          Number(invite.uses ?? 0),
+          Number(invite.maxUses ?? 1),
+          Date.now(),
+        )
       ) {
-        throw new WorkspaceError(
-          "That invite has expired or has already been used.",
-          410,
-        );
+        // Firestore TTL is unavailable on the free plan. Delete unusable invites
+        // when a code is next presented, in the same transaction as validation.
+        transaction.delete(inviteRef);
+        return "expired" as const;
       }
 
       if (typeof invite.workspaceId !== "string" || !invite.workspaceId) {
@@ -147,7 +153,16 @@ export async function POST(request: Request) {
       transaction.update(workspaceRef, {
         memberCount: activeCount + 1,
       });
+
+      return "joined" as const;
     });
+
+    if (inviteState === "expired") {
+      throw new WorkspaceError(
+        "That invite has expired or has already been used.",
+        410,
+      );
+    }
 
     return NextResponse.json({ success: true });
   } catch (error) {

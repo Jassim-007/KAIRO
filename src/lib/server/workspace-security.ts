@@ -5,6 +5,7 @@ import { NextResponse } from "next/server";
 import { Timestamp } from "firebase-admin/firestore";
 import { adminAuth, adminDb } from "@/lib/server/firebase-admin";
 import { isDeletionInProgress } from "@/lib/server/account-deletion-policy";
+import { activeRateLimitCount } from "@/lib/server/expiration";
 
 export class WorkspaceError extends Error {
   constructor(
@@ -103,12 +104,17 @@ export async function enforceRateLimit(
     const windowStartedAt =
       data?.windowStartedAt instanceof Timestamp
         ? data.windowStartedAt.toMillis()
-        : 0;
+        : undefined;
+    const expiresAt =
+      data?.expiresAt instanceof Timestamp
+        ? data.expiresAt.toMillis()
+        : undefined;
 
-    const count =
-      windowStartedAt > 0 && now - windowStartedAt < windowMs
-        ? Number(data?.count ?? 0)
-        : 0;
+    const count = activeRateLimitCount(
+      { windowStartedAtMs: windowStartedAt, expiresAtMs: expiresAt, count: data?.count },
+      now,
+      windowMs,
+    );
 
     if (count >= maxRequests) {
       throw new WorkspaceError(
@@ -124,8 +130,15 @@ export async function enforceRateLimit(
       windowStartedAt: nextWindowStart,
       count: count + 1,
       updatedAt: Timestamp.fromMillis(now),
+      expiresAt: Timestamp.fromMillis(now + 7 * 24 * 60 * 60 * 1000),
     });
   });
+}
+
+/** Shared hourly ceiling across Gemini routes for each account. Route-specific limits remain in place. */
+export async function enforceGeminiRateLimit(uid: string, action: string, routeLimit: number, windowMs = 60 * 60 * 1000) {
+  await enforceRateLimit(uid, "ai_gemini_all_routes", 30, windowMs);
+  await enforceRateLimit(uid, action, routeLimit, windowMs);
 }
 
 export function workspaceErrorResponse(error: unknown) {
